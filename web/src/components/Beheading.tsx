@@ -1,5 +1,8 @@
 "use client";
+import Image from "next/image";
 import { motion, type TargetAndTransition } from "motion/react";
+import { GUARD } from "@/lib/art";
+import { Portrait } from "./Stage";
 import type { AnimId } from "@/lib/retainers";
 import type { Offering } from "@/lib/types";
 
@@ -44,11 +47,11 @@ const FX: Record<AnimId, (o: Offering) => React.ReactNode> = {
   drag: () => (
     <>
       {[0, .06].map((d, i) => (
-        <motion.div key={i} className="guard" style={{ left: `${50 + i * 4}%` }}
+        <motion.div key={i} className="guard" style={{ left: `${50 + i * 5}%` }}
           initial={{ x: 300, opacity: 0 }}
           animate={{ x: [300, 0, -12, -540], opacity: [0, 1, 1, 0] }}
           transition={{ duration: 1.4, delay: DELAY - .1 + d, times: [0, .16, .3, 1], ease: "easeIn" }}>
-          💂
+          <Image src={GUARD} alt="" className="guard-img" sizes="120px" />
         </motion.div>
       ))}
       <motion.div className="dragmark" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }}
@@ -86,8 +89,8 @@ const FX: Record<AnimId, (o: Offering) => React.ReactNode> = {
 
 const SHAKE_AT: Partial<Record<AnimId, number>> = { cannon: 720, stamp: 1040 };
 
-export default function Beheading({ anim, offering, reasonLabel, reasonText }: {
-  anim: AnimId; offering: Offering; reasonLabel: string | null; reasonText?: string;
+export default function Beheading({ anim, offering, reasonLabel, reasonText, variant = 0 }: {
+  anim: AnimId; offering: Offering; reasonLabel: string | null; reasonText?: string; variant?: number;
 }) {
   const caption = reasonText?.trim()
     ? `「${reasonText.trim().slice(0, 30)}」`
@@ -101,7 +104,7 @@ export default function Beheading({ anim, offering, reasonLabel, reasonText }: {
         transition={{ duration: .5, delay: (shakeDelay ?? 0) / 1000, ease: "easeOut" }}
       >
         <motion.div className="victim" animate={VICTIM[anim]}>
-          <div className="body">{offering.retainer.emoji}</div>
+          <div className="body"><Portrait retainer={offering.retainer} variant={variant} /></div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img className="held" src={offering.item.image} alt="" />
         </motion.div>

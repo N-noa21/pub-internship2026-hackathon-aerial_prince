@@ -27,7 +27,14 @@ export async function POST(req: Request) {
     // LLM が落ちても会話が途切れないよう、段階に応じた定型で返す
     const turns = history.filter((t) => t.from === "prince").length;
     const fallback = ["……ど、どうか今一度ご覧くださいませ！", "お、お待ちを！ 値は下げまする！", "……御意。覚悟はできております。"];
-    return NextResponse.json({ reply: fallback[Math.min(turns, 2)], mood: ["pitch", "desperate", "resigned"][Math.min(turns, 2)] });
+    return NextResponse.json({
+      reply: fallback[Math.min(turns, 2)],
+      mood: ["pitch", "desperate", "resigned"][Math.min(turns, 2)],
+      priceDelta: 0, addOn: "",
+    });
   }
-  return NextResponse.json(res);
+  // 値下げは認めない。上乗せも品の値段の 2 倍までに抑える
+  const cap = Math.max(500, Math.round(offering.item.price * 1.0));
+  const delta = Math.min(Math.max(0, Math.round(res.priceDelta ?? 0)), cap);
+  return NextResponse.json({ ...res, priceDelta: delta });
 }

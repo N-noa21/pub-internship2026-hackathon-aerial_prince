@@ -1,10 +1,22 @@
 "use client";
 import { AnimatePresence, motion } from "motion/react";
+import { useEffect } from "react";
 import type { Offering } from "@/lib/types";
 
 export default function ItemModal({ offering, onClose }: {
   offering: Offering | null; onClose: () => void;
 }) {
+  // 開いている間は Escape で閉じ、メニューのキー操作を奪う
+  useEffect(() => {
+    if (!offering) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" || e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onClose(); }
+      if (e.key.startsWith("Arrow")) e.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [offering, onClose]);
+
   return (
     <AnimatePresence>
       {offering && (

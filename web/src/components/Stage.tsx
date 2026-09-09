@@ -1,5 +1,7 @@
 "use client";
-import { motion } from "motion/react";
+import Image from "next/image";
+import { AnimatePresence, motion } from "motion/react";
+import { artFor } from "@/lib/art";
 import type { Mood, Offering } from "@/lib/types";
 import ThroneRoom from "./ThroneRoom";
 
@@ -42,8 +44,18 @@ const IDLE: Record<Mood | "calm", { anim: Record<string, number[]>; dur: number 
   resigned:  { anim: { y: [0, 2, 0], rotate: [4, 4.6, 4] }, dur: 4.5 },        // うなだれる
 };
 
-export function Figure({ offering, entering = true, mood }: {
-  offering: Offering; entering?: boolean; mood?: Mood;
+/** 立ち絵があれば画像、無ければ絵文字 */
+export function Portrait({ retainer, variant = 0 }: {
+  retainer: Offering["retainer"]; variant?: number;
+}) {
+  const art = artFor(retainer.id, variant);
+  if (!art) return <span className="emoji">{retainer.emoji}</span>;
+  return <Image src={art} alt={retainer.name} className="portrait" priority
+    sizes="(max-width: 700px) 40vw, 260px" />;
+}
+
+export function Figure({ offering, entering = true, mood, variant = 0 }: {
+  offering: Offering; entering?: boolean; mood?: Mood; variant?: number;
 }) {
   const { retainer } = offering;
   const idle = IDLE[mood ?? "calm"];
@@ -59,7 +71,7 @@ export function Figure({ offering, entering = true, mood }: {
         animate={idle.anim}
         transition={{ duration: idle.dur, repeat: Infinity, ease: "easeInOut" }}
       >
-        {retainer.emoji}
+        <Portrait retainer={retainer} variant={variant} />
         {mood === "desperate" && <span className="sweat">💦</span>}
         {mood === "resigned" && <span className="sweat">💀</span>}
       </motion.div>
@@ -69,10 +81,12 @@ export function Figure({ offering, entering = true, mood }: {
   );
 }
 
-export function Card({ offering, delay = .28, glow = false, onOpen }: {
+export function Card({ offering, delay = .28, glow = false, onOpen, bump = 0, swapped = false }: {
   offering: Offering; delay?: number; glow?: boolean; onOpen?: () => void;
+  bump?: number; swapped?: boolean;
 }) {
   const { item } = offering;
+  const total = item.price + bump;
   return (
     <motion.div
       className={`offer parchment${glow ? " glow" : ""}`}
@@ -89,7 +103,27 @@ export function Card({ offering, delay = .28, glow = false, onOpen }: {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img className="thumb" src={item.image} alt="" />
       <div className="iname">{item.displayName}</div>
-      <div className="price">{item.price.toLocaleString()}<small>円</small></div>
+      <div className="price">
+        {total.toLocaleString()}<small>円</small>
+        <AnimatePresence>
+          {bump > 0 && (
+            <motion.span className="bump" key={bump}
+              initial={{ opacity: 0, y: 12, scale: .6 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 14 }}>
+              +{bump.toLocaleString()}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </div>
+      {swapped && (
+        <motion.span className="swapped"
+          initial={{ scale: 0, rotate: -20 }} animate={{ scale: 1, rotate: -8 }}
+          transition={{ type: "spring", stiffness: 240, damping: 12, delay: delay + .2 }}>
+          差し替え
+        </motion.span>
+      )}
       {onOpen && <span className="peek">▸ 検分する</span>}
       <motion.div className="seal"
         initial={{ scale: 0, rotate: -40 }} animate={{ scale: 1, rotate: -12 }}

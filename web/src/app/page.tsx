@@ -5,13 +5,21 @@ import AdoptBurst from "@/components/AdoptBurst";
 import Beheading from "@/components/Beheading";
 import EndingScroll from "@/components/EndingScroll";
 import ItemModal from "@/components/ItemModal";
+import Loading from "@/components/Loading";
 import { Menu, Typewriter, Win, type MenuItem } from "@/components/Rpg";
 import { Card, Figure, Queue, Scene } from "@/components/Stage";
 import TitleScreen from "@/components/TitleScreen";
 import { REASONS, SAMPLE_WISHES, pickAnim, type AnimId, type ReasonCode } from "@/lib/retainers";
-import type { EndingResult, Judgment, Mood, Offering, Turn } from "@/lib/types";
+import type { RetainerId } from "@/lib/retainers";
+import type { EndingResult, Item, Judgment, Mood, Offering, Turn } from "@/lib/types";
 
-type Screen = "TITLE" | "WISH" | "AUDIENCE" | "BEHEAD" | "ADOPT" | "ENDING";
+type Pool = { items: Item[]; currentIndex: number };
+
+type Screen = "TITLE" | "WISH" | "AUDIENCE" | "BEHEAD" | "ADOPT" | "RETHINK" | "ENDING";
+
+/** 交渉で上乗せされた分を反映した品 */
+const priced = (o: Offering, bump: number) =>
+  bump > 0 ? { ...o.item, price: o.item.price + bump } : o.item;
 type MenuMode = "root" | "reason" | "talk";
 
 const PHASES = ["触れを出しております……", "家臣が市を巡っております……", "口上を練っております……"];
@@ -25,12 +33,18 @@ export default function Page() {
   const [usedAnims, setUsedAnims] = useState<AnimId[]>([]);
   const [dialogue, setDialogue] = useState<Turn[]>([]);
   const [mood, setMood] = useState<Mood | undefined>();
+  const [bump, setBump] = useState(0);          // 交渉で上乗せされた金額
+  const [lastAddOn, setLastAddOn] = useState("");
+  const [pools, setPools] = useState<Partial<Record<RetainerId, Pool>>>({});
+  const [feedback, setFeedback] = useState<string[]>([]);   // 王子がこれまでに言い放った言葉
+  const [rejected, setRejected] = useState<string[]>([]);   // 斬られた品
+  const [changed, setChanged] = useState<Set<string>>(new Set());
   const [line, setLine] = useState("");
   const [menu, setMenu] = useState<MenuMode>("root");
   const [talkText, setTalkText] = useState("");
   const [talking, setTalking] = useState(false);
   const [inspecting, setInspecting] = useState<Offering | null>(null);
-  const [pending, setPending] = useState<{ anim: AnimId; offering: Offering; label: string; note: string } | null>(null);
+  const [pending, setPending] = useState<{ anim: AnimId; offering: Offering; label: string; note: string; variant: number } | null>(null);
   const [adopted, setAdopted] = useState<Offering | null>(null);
   const [ending, setEnding] = useState<EndingResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,7 +69,7 @@ export default function Page() {
   useEffect(() => {
     if (screen === "AUDIENCE" && off) {
       setDialogue([]); setMood(undefined); setLine(off.speech);
-      setMenu("root"); setTalkText("");
+      setMenu("root"); setTalkText(""); setBump(0); setLastAddOn("");
     }
   }, [screen, cursor, off]);
 
@@ -73,6 +87,7 @@ export default function Page() {
       if (!res.ok) throw new Error(data.error ?? "家臣が集まりませんでした");
       if (!data.offerings?.length) throw new Error("誰も参上しませんでした。別の言い回しでお試しください。");
       setQueue(data.offerings); setCursor(0); setJudgments([]); setUsedAnims([]);
+      setPools(data.pools ?? {}); setFeedback([]); setRejected([]); setChanged(new Set());
       setAdopted(null); setEnding(null);
       setScreen("AUDIENCE");
     } catch (e) {
@@ -99,6 +114,7 @@ export default function Page() {
     if (!msg || !off || talking) return;
     const history = dialogue;
     setDialogue([...history, { from: "prince", text: msg }]);
+    setFeedback((f) => [...f, msg]);
     setTalkText(""); setMenu("root"); setTalking(true); setLine("…………");
     try {
       const res = await fetch("/api/talk", {
@@ -108,10 +124,53 @@ export default function Page() {
       const data = await res.json();
       setDialogue((d) => [...d, { from: "retainer", text: data.reply, mood: data.mood }]);
       setMood(data.mood); setLine(data.reply);
+      if (data.priceDelta > 0) {
+        setBump((b) => b + data.priceDelta);
+        setLastAddOn(data.addOn || "");
+      }
     } catch {
       setLine("……（家臣は言葉を失っている）");
     } finally { setTalking(false); }
   };
+
+  /** 王子の言葉を聞いた後続の家臣が、手持ちの候補から選び直す */
+  const runRethink = useCallback(async (nextIndex: number) => {
+    const remaining = queue.slice(nextIndex).map((o) => o.retainer.id);
+    const sub: Partial<Record<RetainerId, Pool>> = {};
+    for (const id of remaining) if (pools[id]) sub[id] = pools[id];
+    if (!Object.keys(sub).length) { setCursor(nextIndex); setScreen("AUDIENCE"); return; }
+
+    setScreen("RETHINK");
+    try {
+      const res = await fetch("/api/rethink", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wish, feedback, rejected, pools: sub }),
+      });
+      const data = await res.json();
+      const changes: { retainerId: RetainerId; item: Item; speech: string; changed: boolean }[] = data.changes ?? [];
+      if (changes.length) {
+        setQueue((q) => q.map((o, idx) => {
+          if (idx < nextIndex) return o;
+          const ch = changes.find((c) => c.retainerId === o.retainer.id);
+          return ch ? { ...o, item: ch.item, speech: ch.speech } : o;
+        }));
+        setPools((p) => {
+          const next = { ...p };
+          for (const c of changes) {
+            const pool = next[c.retainerId];
+            if (pool) {
+              const at = pool.items.findIndex((i) => i.itemCode === c.item.itemCode);
+              next[c.retainerId] = { ...pool, currentIndex: at < 0 ? pool.currentIndex : at };
+            }
+          }
+          return next;
+        });
+        setChanged(new Set(changes.filter((c) => c.changed).map((c) => c.retainerId)));
+      }
+    } catch { /* 失敗しても元の品のまま進める */ }
+    setCursor(nextIndex);
+    setScreen("AUDIENCE");
+  }, [queue, pools, wish, feedback, rejected]);
 
   const lastPrinceWord = useMemo(
     () => [...dialogue].reverse().find((t) => t.from === "prince")?.text ?? "",
@@ -122,34 +181,38 @@ export default function Page() {
     const note = lastPrinceWord;
     const anim = pickAnim(code, cursor + 1, usedAnims);
     const js = [...judgments, {
-      retainer: off.retainer, item: off.item, verdict: "BEHEAD" as const,
+      retainer: off.retainer, item: priced(off, bump), verdict: "BEHEAD" as const,
       reasonCode: code, reasonLabel: label, reasonText: note || undefined,
       dialogue, anim,
     }];
     setJudgments(js); setUsedAnims([...usedAnims, anim]);
-    setPending({ anim, offering: off, label, note });
+    setRejected((r) => [...r, `${off.item.displayName}（${off.retainer.name} / ${(off.item.price + bump).toLocaleString()}円）`]);
+    setPending({ anim, offering: { ...off, item: priced(off, bump) }, label, note, variant: cursor });
     setScreen("BEHEAD");
+    const spoke = dialogue.some((t) => t.from === "prince");
     setTimeout(() => {
       setPending(null);
       const next = cursor + 1;
       if (next >= queue.length) finish(js, "ALL_BEHEADED", null);
+      else if (spoke) runRethink(next);            // 王子の言葉を聞いて品を選び直す
       else { setCursor(next); setScreen("AUDIENCE"); }
     }, 2700);
   };
 
   const adopt = () => {
     const js = [...judgments, {
-      retainer: off.retainer, item: off.item, verdict: "ADOPT" as const,
+      retainer: off.retainer, item: priced(off, bump), verdict: "ADOPT" as const,
       reasonCode: "silent" as ReasonCode, reasonLabel: "採用", reasonText: lastPrinceWord || undefined,
       dialogue, anim: null,
     }];
-    setJudgments(js); setAdopted(off); setScreen("ADOPT");
+    setJudgments(js); setAdopted({ ...off, item: priced(off, bump) }); setScreen("ADOPT");
     setTimeout(() => finish(js, "ADOPTED", off), 2600);
   };
 
   const reset = (to: Screen) => {
     setWish(""); setQueue([]); setCursor(0); setJudgments([]); setUsedAnims([]);
-    setAdopted(null); setEnding(null); setDialogue([]); setScreen(to);
+    setAdopted(null); setEnding(null); setDialogue([]); setPools({});
+    setFeedback([]); setRejected([]); setChanged(new Set()); setScreen(to);
   };
 
   const rootItems: MenuItem[] = [
@@ -181,18 +244,22 @@ export default function Page() {
           {screen === "AUDIENCE" && off && (
             <motion.div key={`stage-${cursor}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <Queue total={queue.length} cursor={cursor} />
-              <Figure offering={off} mood={mood} />
-              <Card offering={off} onOpen={() => setInspecting(off)} />
+              <Figure offering={off} mood={mood} variant={cursor} />
+              <Card offering={off} onOpen={() => setInspecting(off)} bump={bump}
+                swapped={changed.has(off.retainer.id)} />
             </motion.div>
           )}
           {screen === "BEHEAD" && pending && (
             <motion.div key="fx-behead">
               <Beheading anim={pending.anim} offering={pending.offering}
-                reasonLabel={pending.label} reasonText={pending.note} />
+                reasonLabel={pending.label} reasonText={pending.note} variant={pending.variant} />
             </motion.div>
           )}
           {screen === "ADOPT" && adopted && (
             <motion.div key="fx-adopt"><AdoptBurst offering={adopted} /></motion.div>
+          )}
+          {screen === "RETHINK" && (
+            <motion.div key="fx-rethink" initial={{ opacity: 0 }} animate={{ opacity: 1 }} />
           )}
           {screen === "ENDING" && ending && (
             <motion.div key="fx-ending" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -223,18 +290,19 @@ export default function Page() {
           {screen === "WISH" && (
             <motion.div className="center" key="ui-wish"
               initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              <div className="panel" style={{ width: "min(560px,100%)" }}>
+              <div className="panel" style={{ width: busy ? "auto" : "min(560px,100%)" }}>
+                {busy && <Loading />}
+                {!busy && (
                 <Win speaker="王 子">
-                  <p style={{ margin: "0 0 12px" }}>
-                    {busy ? <Typewriter text={PHASES[phase]} /> : "さて、何を申しつけようか。"}
-                  </p>
+                  <p style={{ margin: "0 0 12px" }}>さて、何を申しつけようか。</p>
                   <input className="rpg-input" value={wish} disabled={busy} autoFocus
                     placeholder="でっかい城が欲しいのじゃ"
                     onChange={(e) => setWish(e.target.value)}
                     onKeyDown={(e) => { if (isEnter(e)) summon(); }} />
                   {error && <p style={{ color: "#ff9a8a", fontSize: ".85rem", margin: "10px 0 0" }}>{error}</p>}
-                </Win>
+                </Win>)}
                 <div style={{ height: 10 }} />
+                {!busy && (
                 <Win className="cmdwin">
                   <Menu columns={3} items={[
                     { key: "go", label: "よびだす", disabled: busy || !wish.trim() },
@@ -245,7 +313,7 @@ export default function Page() {
                     if (k === "gacha") setWish(SAMPLE_WISHES[Math.floor(Math.random() * SAMPLE_WISHES.length)]);
                     if (k === "back") reset("TITLE");
                   }} />
-                </Win>
+                </Win>)}
               </div>
             </motion.div>
           )}
@@ -286,7 +354,9 @@ export default function Page() {
                     ) : (
                       <div className="status">
                         <span>献上　<b>{off.item.displayName}</b></span>
-                        <span>値　<b>{off.item.price.toLocaleString()}円</b></span>
+                        <span>値　<b>{(off.item.price + bump).toLocaleString()}円</b>
+                          {bump > 0 && <em className="up">＋{bump.toLocaleString()}</em>}</span>
+                        {lastAddOn && <span className="addon">おまけ：{lastAddOn}</span>}
                       </div>
                     )}
                   </Win>
@@ -302,6 +372,14 @@ export default function Page() {
             </motion.div>
           )}
 
+          {/* ---------------------------------------- 差し替え中 */}
+          {screen === "RETHINK" && (
+            <motion.div className="center" key="ui-rethink"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Loading label="家臣たちがざわめいております……" />
+            </motion.div>
+          )}
+
           {/* ---------------------------------------- エンディング */}
           {screen === "ENDING" && (
             <motion.div key="ui-end" style={{ display: "contents" }}
@@ -310,7 +388,7 @@ export default function Page() {
                 <div className="t">顛 末</div>
                 <div className="s">「{wish}」</div>
               </div>
-              {!ending && <div className="center"><p className="hint waiting">⌛ 年代記を編んでおります……</p></div>}
+              {!ending && <div className="center"><Loading label="年代記を編んでおります……" /></div>}
               {ending && (
                 <motion.div className="rpg-bottom" initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 2.1, duration: .6 }}>

@@ -1,5 +1,7 @@
 "use client";
+import Image from "next/image";
 import { motion } from "motion/react";
+import { PRINCE } from "@/lib/art";
 
 export default function TitleScreen() {
   return (
@@ -7,7 +9,7 @@ export default function TitleScreen() {
         <motion.div className="crown"
           animate={{ y: [0, -9, 0] }}
           transition={{ duration: 3.4, repeat: Infinity, ease: "easeInOut" }}>
-          👑
+          <Image src={PRINCE} alt="" className="prince-art" sizes="220px" priority />
         </motion.div>
         <motion.div className="logo"
           initial={{ scale: 1.5, opacity: 0, filter: "blur(10px)" }}

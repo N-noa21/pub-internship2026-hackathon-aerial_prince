@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildQueries, llmReady, pickOfferings } from "@/lib/llm";
 import { searchAny } from "@/lib/rakuten";
-import { RETAINERS, type RetainerId } from "@/lib/retainers";
+import { lineup, type RetainerId } from "@/lib/retainers";
 import type { Item, Offering } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -38,10 +38,11 @@ export async function POST(req: Request) {
   };
 
   // 2. 楽天で引く
+  const cast = lineup();
   const pools: Partial<Record<RetainerId, Item[]>> = {};
   const hits: Partial<Record<RetainerId, string>> = {};
   const seen = new Set<string>();
-  for (const r of RETAINERS) {
+  for (const r of cast) {
     try {
       const { items, hit } = await searchAny(queriesFor(r.id, r.twists), 20);
       const pool = items.filter((i) => !seen.has(i.itemCode)).slice(0, 6);
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
   const picks = await pickOfferings(wish.trim(), pools);
 
   const offerings: Offering[] = [];
-  for (const r of RETAINERS) {                 // 宰相が最後になる並び
+  for (const r of cast) {                      // 宰相が最後になる並び
     const pool = pools[r.id];
     if (!pool?.length) continue;
     const chosen = picks?.[r.id];
@@ -70,8 +71,18 @@ export async function POST(req: Request) {
     });
   }
 
+  // 差し替え（/api/rethink）で使えるよう、候補リストもそのまま返す
+  const poolOut: Record<string, { items: Item[]; currentIndex: number }> = {};
+  for (const o of offerings) {
+    const pool = pools[o.retainer.id];
+    if (!pool) continue;
+    const at = pool.findIndex((i) => i.itemCode === o.item.itemCode);
+    poolOut[o.retainer.id] = { items: pool, currentIndex: at < 0 ? 0 : at };
+  }
+
   return NextResponse.json({
     offerings,
+    pools: poolOut,
     meta: { llm: { queries: usedLlmQuery, picks: Boolean(picks), enabled: llmReady() } },
   });
 }

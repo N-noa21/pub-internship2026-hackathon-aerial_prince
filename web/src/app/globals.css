@@ -659,3 +659,100 @@ html, body { height: 100%; overflow: hidden; }
 .endrow .sc .bar { height: 12px; background: rgba(6, 10, 30, .8); border-color: #3b52aa; }
 .endrow .sc .v { font-size: .76rem; }
 @media (max-width: 700px) { .endrow { grid-template-columns: 1fr; } }
+
+/* ============================================================ 立ち絵 */
+.portrait {
+  width: auto; height: clamp(150px, 30vh, 300px); object-fit: contain;
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, .55));
+}
+.figure .emoji, .victim .emoji { font-size: clamp(58px, 11vh, 108px); line-height: 1; }
+.figure .body, .victim .body { display: flex; justify-content: center; align-items: flex-end; }
+.figure { width: auto; margin-left: 0; transform: translateX(-50%); }
+.victim { width: auto; margin-left: 0; transform-origin: center bottom; }
+.guard-img { width: auto; height: clamp(90px, 17vh, 170px); object-fit: contain;
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, .6)); }
+.guard { bottom: 28%; }
+.prince-art { width: auto; height: clamp(120px, 22vh, 210px); object-fit: contain;
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, .6)); }
+.crest .crown { font-size: 0; }
+
+/* ============================================================ ロード（疾走） */
+.gallop {
+  position: relative; width: min(680px, 92vw); height: min(300px, 42vh);
+  display: grid; place-items: center; overflow: hidden;
+  border-radius: 14px; border: 1px solid rgba(217, 181, 68, .3);
+  background: linear-gradient(180deg, rgba(10, 4, 6, .82), rgba(10, 4, 6, .92));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+}
+.speedlines { position: absolute; inset: 0; pointer-events: none; }
+.speedlines span {
+  position: absolute; right: -20%; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #ffe4a8);
+  animation: streak linear infinite;
+}
+@keyframes streak { from { transform: translateX(0) } to { transform: translateX(-160vw) } }
+
+.rider { position: relative; z-index: 3; }
+.rider-img {
+  width: auto; height: min(180px, 26vh); object-fit: contain;
+  filter: drop-shadow(0 14px 20px rgba(0, 0, 0, .6));
+}
+.hooves { position: absolute; left: 50%; bottom: 26%; z-index: 2; }
+.hooves span {
+  position: absolute; width: 16px; height: 16px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(226, 200, 150, .85), transparent 70%);
+}
+.road {
+  position: absolute; left: 0; right: 0; bottom: 22%; height: 3px; z-index: 1;
+  background: repeating-linear-gradient(90deg, rgba(255, 220, 150, .55) 0 34px, transparent 34px 74px);
+  animation: streak .42s linear infinite;
+}
+.gallop-text {
+  position: absolute; left: 0; right: 0; bottom: 8%; z-index: 4; margin: 0; text-align: center;
+  font-size: clamp(.86rem, 2.1vw, 1rem); letter-spacing: .16em; color: #f0e0bd;
+  text-shadow: 0 2px 8px #000;
+}
+
+.keyhint {
+  margin: 6px 0 0; text-align: right; font-size: .66rem; letter-spacing: .14em;
+  color: #7f8cc0; user-select: none;
+}
+
+/* 交渉で上がった値段 */
+.offer .price { position: relative; }
+.offer .bump {
+  position: absolute; right: -6px; top: -16px;
+  font-family: var(--sans); font-size: .62rem; font-weight: 900; letter-spacing: .02em;
+  color: #fff; background: linear-gradient(180deg, #e0453a, #a5171a);
+  border: 1px solid #ffd0a0; border-radius: 999px; padding: 1px 8px;
+  box-shadow: 0 3px 10px rgba(220, 60, 40, .55);
+  animation: bumpglow 1.6s ease-out;
+}
+@keyframes bumpglow {
+  0% { box-shadow: 0 0 0 0 rgba(255, 120, 80, .8) }
+  100% { box-shadow: 0 3px 10px rgba(220, 60, 40, .55) }
+}
+.status .up {
+  margin-left: 6px; font-style: normal; font-family: var(--sans); font-size: .78rem;
+  font-weight: 900; color: #ff9a7a; text-shadow: 0 0 10px rgba(255, 110, 70, .5);
+}
+.status .addon { color: #ffd9a8; font-size: .74rem; }
+
+/* 王子の言葉を受けて差し替えられた品 */
+.offer .swapped {
+  position: absolute; left: -10px; top: -12px; z-index: 3;
+  padding: 2px 10px; font-size: .66rem; font-weight: 900; letter-spacing: .1em;
+  color: #2a1a06; background: linear-gradient(180deg, #ffe9a8, #d9b544);
+  border: 2px solid #8a6a1c; border-radius: 4px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .5);
+}
+
+/* 立ち絵が無い家臣のフォールバック（絵文字を額装して浮かないようにする） */
+.figure .emoji, .victim .emoji {
+  display: grid; place-items: center;
+  width: clamp(120px, 22vh, 220px); height: clamp(120px, 22vh, 220px);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 236, 190, .22), rgba(20, 10, 8, .5) 72%);
+  border: 2px solid rgba(217, 181, 68, .45);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .5);
+}

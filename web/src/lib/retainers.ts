@@ -1,4 +1,4 @@
-export type RetainerId = "merchant" | "noble" | "knight" | "farmer" | "chancellor";
+export type RetainerId = "merchant" | "noble" | "knight" | "farmer" | "alchemist" | "chancellor";
 
 export type Retainer = {
   id: RetainerId;
@@ -10,7 +10,10 @@ export type Retainer = {
   speech: string[];
 };
 
-/** 5 人固定。宰相は必ず最後（まとも枠）。 */
+/**
+ * 家臣の全員。1 プレイに出るのは 5 人。
+ * ふざけ枠 4 人は下の候補から選ばれ、宰相（まとも枠）が必ず最後に来る。
+ */
 export const RETAINERS: Retainer[] = [
   {
     id: "merchant", name: "商人", emoji: "🧺", color: "#c9762a",
@@ -33,6 +36,11 @@ export const RETAINERS: Retainer[] = [
     speech: ["うちの村の精一杯でごぜぇます……", "こ、こんなもんしか無ぇですが……", "みんなで持ち寄ったですだ！"],
   },
   {
+    id: "alchemist", name: "錬金術師", emoji: "⚗️", color: "#9a6ec0",
+    twists: ["サプリ", "開運", "健康"],
+    speech: ["ぐふふ、効きますぞ……", "これぞ秘薬にございます……", "科学の粋、とくとご覧あれ……"],
+  },
+  {
     id: "chancellor", name: "宰相", emoji: "📜", color: "#5f6b7a",
     twists: ["入門 セット", "実用", "体験"],
     speech: ["現実的な線で申し上げます。", "夢はございませんが、確実にございます。", "予算と実現性を考えますと、これに尽きます。"],
@@ -40,6 +48,21 @@ export const RETAINERS: Retainer[] = [
 ];
 
 export const BY_ID = Object.fromEntries(RETAINERS.map((r) => [r.id, r])) as Record<RetainerId, Retainer>;
+
+/**
+ * 商人と農民は毎回出る。残り 2 枠はローテーション。
+ * 貴族は立ち絵が用意できていないので、いまは外している
+ * （src/assets に貴族の絵を足して art.ts に登録すれば、ここに "noble" を戻すだけでよい）。
+ */
+export const FIXED_IDS: RetainerId[] = ["merchant", "farmer"];
+export const ROTATING_IDS: RetainerId[] = ["knight", "alchemist"];
+
+/** 1 プレイぶんの顔ぶれを決める。宰相は必ず最後。 */
+export function lineup(): Retainer[] {
+  const rotating = [...ROTATING_IDS].sort(() => Math.random() - 0.5).slice(0, 2);
+  const front = [...FIXED_IDS, ...rotating].sort(() => Math.random() - 0.5);
+  return [...front.map((id) => BY_ID[id]), BY_ID.chancellor];
+}
 
 export type ReasonCode = "rude" | "cheap" | "not_my_taste" | "too_pricey" | "off_point" | "silent";
 

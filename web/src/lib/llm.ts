@@ -11,8 +11,10 @@ import { z } from "zod";
 import type { Item } from "./types";
 import { RETAINERS, type RetainerId } from "./retainers";
 
-const MODEL = process.env.LLM_MODEL ?? "anthropic/claude-haiku-4.5";
-const IDS = ["merchant", "noble", "knight", "farmer", "chancellor"] as const;
+// 品質重視で Opus を既定にする。会話だけは応答の速い fast 版を使う。
+const MODEL = process.env.LLM_MODEL ?? "anthropic/claude-sonnet-5";
+const MODEL_FAST = process.env.LLM_MODEL_FAST ?? "anthropic/claude-sonnet-4.6";
+const IDS = ["merchant", "noble", "knight", "farmer", "alchemist", "chancellor"] as const;
 
 export const llmReady = () => Boolean(process.env.AI_GATEWAY_API_KEY);
 
@@ -30,17 +32,19 @@ const ROLES = `家臣と役割:
 - noble(貴族): 高級・ブランド・インテリア。値段だけ立派
 - knight(騎士): 装備・道具・アウトドア。実用一辺倒
 - farmer(農民): 食品・農産物・生活雑貨。素朴で的外れ
+- alchemist(錬金術師): サプリ・健康グッズ・開運アイテム。怪しい効能を語る
 - chancellor(宰相): ★この人だけ「まとも」。ズラさない。
   現実世界で実際に用意できる、地味だが妥当な答えを出す。
   例: 城→城の見学ツアー / 白馬→乗馬体験レッスン / 黄金→純金積立 /
       不老不死→人間ドック / 最強の剣→剣道防具。
   おもちゃ・模型・ミニチュアは宰相の答えとして絶対に選ばない`;
 
-async function ask<T>(schema: z.ZodType<T>, system: string, prompt: string): Promise<T | null> {
+async function ask<T>(schema: z.ZodType<T>, system: string, prompt: string,
+                      model = MODEL): Promise<T | null> {
   if (!llmReady()) return null;
   try {
     const { object } = await generateObject({
-      model: gateway(MODEL), schema, system, prompt,
+      model: gateway(model), schema, system, prompt,
       temperature: 1, maxRetries: 1,
     });
     return object;
@@ -123,6 +127,8 @@ export async function pickOfferings(wish: string, pools: Partial<Record<Retainer
     例「本革にて。雨天でも問題ありませぬ。お納めくだされ」
 - farmer 農民: 素朴で必死。方言まじり。語尾「〜ですだ」「〜でごぜぇます」
     例「村みんなで持ち寄っただよ……こ、これしか無ぇですだ」
+- alchemist 錬金術師: 怪しい。含み笑い。効能を大げさに語る。語尾「〜ですぞ……」「〜にございます……」
+    例「ぐふふ、これを一粒。三日で若返りますぞ……たぶん」
 - chancellor 宰相: 冷静な敬語。正論だが夢がない。予算と実現性の話をする。
     例「現実的な線でございます。予算内で、確実に実行できます」
 - 家臣ごとに語尾と温度を必ず変える。全員が同じ調子になってはいけない`,
@@ -174,10 +180,14 @@ const TalkSchema = z.object({
   reply: z.string().describe("家臣の返答。60 文字以内。その家臣の口調で"),
   mood: z.enum(["pitch", "desperate", "resigned"])
     .describe("pitch=まだ売り込む / desperate=焦って必死 / resigned=死を悟った"),
+  priceDelta: z.number().int().min(0)
+    .describe("この返答で品に上乗せした金額。0 以上の整数。値引きは禁止なので負の数は入れない"),
+  addOn: z.string().describe("上乗せした物や理由。無ければ空文字"),
 });
 
 const VOICES: Record<string, string> = {
   merchant: "通販番組の押し売り。早口。値段と数量を出す。語尾「〜にございます！」「〜ですぞ！」",
+  alchemist: "怪しい。含み笑い。効能を大げさに語るが、追い詰められると急に弱気。語尾「〜ですぞ……」",
   noble: "気取って回りくどい。相手を見下す。追い詰められると急に取り繕う。語尾「〜ですわ」",
   knight: "実直で武骨。報告口調。短い。語尾「〜であります」「〜にて」",
   farmer: "素朴で必死。方言まじり。家族や村の話を出す。語尾「〜ですだ」「〜でごぜぇます」",
@@ -193,7 +203,7 @@ export async function talk(input: {
   const stage = turns <= 0
     ? "【第1段階】まだ余裕がある。商品の良さを必死に売り込む。長所を具体的に並べる。"
     : turns === 1
-      ? "【第2段階】王子の機嫌が悪いと察している。焦り始める。値引き・おまけ・言い訳・別の使い道を持ち出す。命乞いの気配がにじむ。"
+      ? "【第2段階】王子の機嫌が悪いと察している。焦り始める。おまけを足す・別の使い道を持ち出す・言い訳をする。命乞いの気配がにじむ。"
       : "【第3段階】斬られると悟っている。売り込みを諦め、遺言めいたことを言う。家族や故郷、後悔、あるいは妙に落ち着いた達観。それでも商品には一言触れる。";
 
   return ask(TalkSchema,
@@ -208,14 +218,79 @@ ${stage}
 
 ■ ルール
 - 60 文字以内。長い演説はしない
-- 献上した品（${input.itemName} / ${input.itemPrice.toLocaleString()}円）に必ず触れる
+- 献上した品（${input.itemName} / 現在 ${input.itemPrice.toLocaleString()}円）に必ず触れる
 - 王子の言葉に正面から反応する。無視して同じ売り文句を繰り返さない
 - 口調は絶対に崩さない。地の文やナレーションは書かない。台詞だけ
-- mood は自分の心境に正直に付ける`,
+- mood は自分の心境に正直に付ける
+
+■ 値段のルール（重要）
+- **値引きは絶対にしない。** 「お安くします」「値を下げます」は禁句。priceDelta に負の数を入れてはいけない
+- 代わりに、**おまけを足して値を釣り上げてよい**。「これもお付けします」「上等な方をご用意します」など
+- 値を上げたときは priceDelta にその金額（正の整数）、addOn に足した物を書く
+- 上げ幅は品の値段の 5〜60% 程度が目安。法外な額にはしない
+- 何も足さないときは priceDelta を 0、addOn を空文字にする
+- 第3段階（死を悟った）では、もう値をいじらない。priceDelta は 0`,
     `王子のわがまま: 「${input.wish}」
 あなたの最初の口上: 「${input.speech}」
 ${input.history.map((t) => `${t.from === "prince" ? "王子" : "あなた"}: 「${t.text}」`).join("\n")}
 王子: 「${input.message}」
 
-あなたの返答:`);
+あなたの返答:`, MODEL_FAST);
+}
+
+
+/* ------------------------------------------- 5. 王子の言葉を受けた差し替え */
+const RethinkSchema = z.object({
+  changes: z.array(z.object({
+    retainerId: z.enum(IDS),
+    index: z.number().int().describe("その家臣の候補リストの番号。変えないなら現在と同じ番号"),
+    displayName: z.string().describe("短い呼び名。8〜18 文字"),
+    speech: z.string().describe("差し替えた言い訳を含む口上。40 文字以内。その家臣の口調で"),
+    changed: z.boolean().describe("実際に品を変えたか"),
+  })),
+});
+
+/**
+ * 王子が前の家臣に言った言葉を、まだ献上していない家臣たちが聞いている。
+ * 候補リストの中から選び直させる（楽天を引き直さないので速い）。
+ */
+export async function rethink(input: {
+  wish: string;
+  feedback: string[];                       // 王子がこれまでに言った言葉
+  rejected: string[];                       // 斬られた品
+  pools: Partial<Record<RetainerId, { items: Item[]; currentIndex: number }>>;
+}) {
+  const lines: string[] = [];
+  for (const r of RETAINERS) {
+    const p = input.pools[r.id];
+    if (!p?.items.length) continue;
+    lines.push(`[${r.id} / ${r.name}] いま出す予定: ${p.currentIndex}`);
+    p.items.forEach((it, i) =>
+      lines.push(`  ${i}: ${it.displayName} ｜ ${it.name.slice(0, 50)} / ${it.price.toLocaleString()}円`));
+  }
+  if (!lines.length) return null;
+
+  return ask(RethinkSchema,
+    `謁見の場で、前の家臣が王子に叱られた。**列に並んでいる家臣たちはそれを聞いている。**
+彼らは慌てて、自分が出す品を選び直す。
+
+判断の仕方:
+- 王子の言葉から**何が気に入らなかったのか**を読み取る（安すぎる／解釈がズレている／小さい／趣味に合わない 等）
+- 手持ちの候補にもっと良いものがあれば **index を変える**（changed = true）
+- 候補が全部同じようなものなら、無理に変えず現在の index のままにする（changed = false）
+- chancellor(宰相) は動じない。よほどの理由がなければ変えない
+- 品を変えたときの口上には、**慌てて差し替えた気配**をにじませる
+  例「い、いまのは忘れてくだせぇ。こちらの方が……」「急ぎ、上等な方をご用意しました」
+- 候補にない商品を作らない。必ず index で答える
+- 家臣ごとの口調は崩さない`,
+    `王子のわがまま: 「${input.wish}」
+
+王子がこれまでに言い放った言葉:
+${input.feedback.map((f) => `- 「${f}」`).join("\n") || "- （まだ何も言っていない）"}
+
+すでに斬られた品:
+${input.rejected.map((r) => `- ${r}`).join("\n") || "- （なし）"}
+
+まだ献上していない家臣と、その手持ちの候補:
+${lines.join("\n")}`);
 }
