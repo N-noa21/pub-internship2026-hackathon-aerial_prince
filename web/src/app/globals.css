@@ -857,6 +857,12 @@ html, body { height: 100%; overflow: hidden; }
 }
 .mute:hover { background: rgba(10, 4, 6, .9); border-color: var(--gold); }
 
+.bgm-credit {
+  position: fixed; bottom: 6px; right: 10px; z-index: 9999;
+  font-size: .65rem; color: rgba(217, 181, 68, .4);
+  font-family: var(--sans); pointer-events: none;
+}
+
 /* ============================================================ わがまま入力 */
 .wish-row { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: end; }
 .wish-prince img { width: auto; height: clamp(120px, 22vh, 200px); filter: drop-shadow(0 10px 20px rgba(0, 0, 0, .6)); }

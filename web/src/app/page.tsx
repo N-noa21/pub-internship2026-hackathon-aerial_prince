@@ -481,6 +481,7 @@ function Game() {
       </div>
 
       <Curtain active={curtain} />
+      <div className="bgm-credit">音楽：魔王魂 ／ DOVA-SYNDROME</div>
       <ItemModal offering={inspecting} onClose={() => setInspecting(null)} />
     </main>
   );
