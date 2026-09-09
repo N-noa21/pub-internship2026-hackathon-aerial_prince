@@ -66,6 +66,8 @@ export const sfx = {
   fanfare: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .18, "square", .05, i * .11)),
   /** 称号の出現 */
   reveal: () => { tone(220, .5, "sine", .12, 0, 110); tone(880, .3, "triangle", .05, .05); },
+  /** 波しぶき（品を探している間）*/
+  splash: () => { noise(.5, .06, 0, 300); tone(140, .4, "sine", .04, 0, 60); },
   /** 蹄の音（ロード中）*/
   hoof: () => { tone(320, .05, "triangle", .05, 0, 180); tone(280, .05, "triangle", .05, .1, 160); },
   isMuted: () => muted,

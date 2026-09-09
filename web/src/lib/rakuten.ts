@@ -70,7 +70,11 @@ export async function search(query: string, hits = 20): Promise<Item[]> {
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(`${ENDPOINT}?${params}`, { cache: "no-store" });
       if (res.status === 429 && attempt < 2) { await sleep(1200 * (attempt + 1)); continue; }
-      if (!res.ok) throw new Error(`Rakuten API ${res.status}`);
+      if (!res.ok) {
+        let detail = "";
+        try { detail = ((await res.json()) as { errors?: { errorMessage?: string } }).errors?.errorMessage ?? ""; } catch { /* 本文なし */ }
+        throw new Error(`Rakuten API ${res.status}${detail ? ` ${detail}` : ""}`);
+      }
       const data = (await res.json()) as { Items?: { Item?: RawItem }[] };
       return (data.Items ?? [])
         .map((row) => (row.Item ?? row) as unknown as RawItem)
@@ -99,13 +103,19 @@ function toItem(it: RawItem): Item {
 }
 
 /** 候補の語を順に試し、最初に当たったものを返す */
+export let lastError: string | null = null;
+
 export async function searchAny(queries: string[], hits = 20): Promise<{ items: Item[]; hit: string }> {
   for (const q of queries) {
     if (!q?.trim()) continue;
     try {
       const items = await search(q.trim(), hits);
-      if (items.length) return { items, hit: q.trim() };
-    } catch { /* 次の候補へ */ }
+      if (items.length) { lastError = null; return { items, hit: q.trim() }; }
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+      // 認証・IP 拒否は候補を変えても直らないので、無駄に叩かない
+      if (/403|401/.test(lastError)) break;
+    }
   }
   return { items: [], hit: queries[0] ?? "" };
 }

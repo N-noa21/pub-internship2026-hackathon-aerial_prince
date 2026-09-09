@@ -6,6 +6,7 @@ import type { StaticImageData } from "next/image";
 import heishi from "@/assets/heishi.png";
 import kenshi from "@/assets/kenshi.png";
 import kizoku from "@/assets/kizoku.png";
+import kraken from "@/assets/fantasy_ocean_kraken.png";
 import noumin from "@/assets/noumin.png";
 import noumin_fufu from "@/assets/noumin_fufu.png";
 import noumin_oji from "@/assets/noumin_oji.png";
@@ -35,7 +36,8 @@ export const ART: Partial<Record<RetainerId, StaticImageData>> = {
 };
 
 export const GUARD = heishi;   // 打ち首のとき連行に来る衛兵
-export const PRINCE = prince;  // タイトルとロード画面の王子
+export const PRINCE = prince;  // タイトルと顛末待ちの王子
+export const KRAKEN = kraken;  // 品を探している間（海の向こうから品を運んでくる）
 
 /** 家臣 1 人ぶんの立ち絵を返す。農民だけは席順で絵を変える。 */
 export function artFor(id: RetainerId, variant = 0): StaticImageData | undefined {

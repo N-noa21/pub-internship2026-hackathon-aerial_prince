@@ -36,9 +36,15 @@ export type Judgment = {
   anim: AnimId | null;
 };
 
+export type Chronology = { year: number; event: string };
+
 export type EndingResult = {
   title: string;
   fable: string;
   epilogue: string;
   scores: Record<string, number>;
+  /** 元号（この謁見を元年とする）。例「城望」 */
+  era?: string;
+  /** 年表。最後の一行は落ち（例「十年　王子処刑」） */
+  timeline?: Chronology[];
 };

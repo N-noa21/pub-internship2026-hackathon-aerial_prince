@@ -62,7 +62,7 @@ const QuerySchema = z.object({
     retainerId: z.enum(IDS),
     query: z.string().describe("楽天市場の検索キーワード。日本語 1〜3 語"),
     twist: z.string().describe("使ったズラし方の型の名前"),
-  })).length(5),
+  })).min(1),
 });
 
 export async function buildQueries(wish: string) {
@@ -155,6 +155,11 @@ export async function pickOfferings(wish: string, pools: Partial<Record<Retainer
 const EndingSchema = z.object({
   title: z.string().describe("王子に与える称号。12 文字以内"),
   epilogue: z.string().describe("その後の国の運命。3〜4 文。短すぎてはいけない"),
+  era: z.string().describe("この謁見を元年とする元号。漢字 2 文字。わがままや採用した品に因む（例: 城望、松茸、金鯱）"),
+  timeline: z.array(z.object({
+    year: z.number().int().min(1).describe("元号の年。元年=1。昇順"),
+    event: z.string().describe("出来事。14 文字以内。体言止め（例「商人、打ち首」「王子処刑」）"),
+  })).min(4).max(6).describe("年表。元年は謁見。最後の一行は落ち（王子処刑・王子退位・国滅ぶ・王子、○○で財を成す 等）"),
 });
 
 export async function writeEnding(input: {
@@ -169,7 +174,11 @@ export async function writeEnding(input: {
 - 王子が理由を述べていたら、その言葉を鉤括弧つきでそのまま引用する。
   自由記述の理由があれば、定型の理由より優先して引用する
 - 指定された寓話の型を下敷きにする
-- epilogue は必ず 3〜4 文。一文だけの素っ気ない締めは禁止`,
+- epilogue は必ず 3〜4 文。一文だけの素っ気ない締めは禁止
+- era は令和・平成のような元号を、このわがままに因んで 2 文字で作る（例: 城を望んだ→「城望」、松茸を得た→「松茸」）
+- timeline は年表。元年は謁見そのもの。以降は判決や品にまつわる出来事を年を飛ばしながら並べ、
+  最後の一行は年が大きく飛んだ落ち（「十二年　王子処刑」「二十年　国滅ぶ」「八年　王子、コーン缶で財を成す」など）。
+  斬られた家臣の名や品名を使うと効く`,
     `王子のわがまま: 「${input.wish}」
 判決:
 ${input.lines.join("\n")}

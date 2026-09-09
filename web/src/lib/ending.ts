@@ -1,3 +1,4 @@
+import { fallbackTimeline } from "./chronicle";
 import type { EndingResult, Judgment } from "./types";
 import type { Offering } from "./types";
 
@@ -36,6 +37,8 @@ export function judge(judgments: Judgment[], outcome: "ADOPTED" | "ALL_BEHEADED"
 
   return {
     title, fable, epilogue,
+    era: "下民",
+    timeline: fallbackTimeline(judgments.map((j) => ({ name: j.retainer.name, verdict: j.verdict, item: j.item.displayName })), outcome),
     scores: {
       暴君度: Math.min(100, behead * 20),
       浪費度: Math.min(100, Math.floor(price / 200)),

@@ -24,6 +24,15 @@ type Screen = "TITLE" | "WISH" | "AUDIENCE" | "BEHEAD" | "ADOPT" | "RETHINK" | "
 type MenuMode = "root" | "reason" | "talk";
 type Pool = { items: Item[]; currentIndex: number };
 
+/** 楽天 API のエラーを、王子に読める言葉にする */
+function explain(err: string | null): string {
+  if (!err) return "誰も参上しませんでした。別の言い回しでお試しください。";
+  if (/CLIENT_IP_NOT_ALLOWED/.test(err)) return "楽天 API がこの端末の IP を拒否しています（CLIENT_IP_NOT_ALLOWED）。楽天ウェブサービスの IP 登録を確認してください。";
+  if (/429/.test(err)) return "楽天 API の呼び出し回数が上限に達しました。少し待ってからお試しください。";
+  if (/401|403/.test(err)) return `楽天 API に拒否されました（${err}）。アプリ ID とアクセスキーを確認してください。`;
+  return `献上品を探せませんでした（${err}）。`;
+}
+
 /** 交渉で上乗せされた分を反映した品 */
 const priced = (o: Offering, bump: number) =>
   bump > 0 ? { ...o.item, price: o.item.price + bump } : o.item;
@@ -107,8 +116,9 @@ function Game() {
   const summon = useCallback(async () => {
     if (!wish.trim()) return;
     setBusy(true); setError(null);
-    const hoof = setInterval(() => sfx.hoof(), 420);
+    const hoof = setInterval(() => sfx.splash(), 2400);
     let started = false;
+    let streamError: string | null = null;
     try {
       const res = await fetch("/api/offerings", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -145,11 +155,11 @@ function Game() {
               transit("AUDIENCE");
             }
           }
-          if (msg.type === "done") setStreamDone(true);
+          if (msg.type === "done") { setStreamDone(true); if (!count) streamError = msg.error ?? null; }
         }
       }
       setStreamDone(true);
-      if (!count) throw new Error("誰も参上しませんでした。別の言い回しでお試しください。");
+      if (!count) throw new Error(explain(streamError));
     } catch (e) {
       if (!started) setError(e instanceof Error ? e.message : "失敗しました");
       setStreamDone(true);
@@ -190,7 +200,10 @@ function Game() {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((gen: EndingResult | null) => {
-        if (gen?.epilogue) setEnding((cur) => ({ ...(cur ?? local), title: gen.title || local.title, epilogue: gen.epilogue }));
+        if (gen?.epilogue) setEnding((cur) => ({
+          ...(cur ?? local), title: gen.title || local.title, epilogue: gen.epilogue,
+          era: gen.era || local.era, timeline: gen.timeline?.length ? gen.timeline : local.timeline,
+        }));
       })
       .catch(() => { /* 手元の顛末のまま */ })
       .finally(() => setRefining(false));
@@ -361,7 +374,7 @@ function Game() {
           {screen === "WISH" && (
             <motion.div className="center" key="ui-wish" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               <div className="panel" style={{ width: busy ? "auto" : "min(640px,100%)" }}>
-                {busy && <Loading />}
+                {busy && <Loading mode="kraken" />}
                 {!busy && (
                   <div className="wish-row">
                     <div className="wish-prince"><Image src={PRINCE} alt="" sizes="220px" priority /></div>
@@ -447,20 +460,21 @@ function Game() {
 
           {screen === "WAITING" && (
             <motion.div className="center" key="ui-waiting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <Loading label="次の者が市から戻っております……" />
+              <Loading mode="kraken" label="次の者の船が港に入っております……" />
             </motion.div>
           )}
 
           {screen === "RETHINK" && (
             <motion.div className="center" key="ui-rethink" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <Loading label="次の者が慌てて品を見直しております……" />
+              <Loading mode="kraken" label="次の者が慌てて積荷を見直しております……" />
             </motion.div>
           )}
 
           {screen === "ENDING" && ending && (
             <motion.div key="ui-end" className="end-stage" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
               <EndingStage res={ending} adopted={adopted} judgments={judgments} wish={wish}
-                refining={refining} onAgain={() => reset("WISH")} onTitle={() => reset("TITLE")} />
+                refining={refining} onAgain={() => reset("WISH")} onTitle={() => reset("TITLE")}
+                onInspect={setInspecting} />
             </motion.div>
           )}
         </AnimatePresence>

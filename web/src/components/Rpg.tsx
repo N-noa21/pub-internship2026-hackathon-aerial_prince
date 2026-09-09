@@ -121,7 +121,7 @@ export function Menu({ items, onPick, columns = 1, hint = true }: {
 
   return (
     <>
-      <ul className="menu" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0,1fr))` }}>
+      <ul className="menu" style={{ gridTemplateColumns: `repeat(${columns}, minmax(max-content, 1fr))` }}>
         {items.map((it, idx) => (
           <li key={it.key}>
             <button className="mi" data-on={idx === i} disabled={it.disabled}

@@ -30,5 +30,7 @@ export async function POST(req: Request) {
     ...base,
     title: gen?.title || base.title,
     epilogue: gen?.epilogue || base.epilogue,
+    era: gen?.era || base.era,
+    timeline: gen?.timeline?.length ? gen.timeline : base.timeline,
   });
 }

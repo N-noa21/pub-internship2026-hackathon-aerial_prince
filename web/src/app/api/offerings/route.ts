@@ -1,5 +1,5 @@
 import { buildQueries, llmReady, pickOne } from "@/lib/llm";
-import { searchAny } from "@/lib/rakuten";
+import { lastError, searchAny } from "@/lib/rakuten";
 import { lineup, type RetainerId } from "@/lib/retainers";
 import type { Item, Offering } from "@/lib/types";
 
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
         const at = pool.findIndex((x) => x.itemCode === item.itemCode);
         emit({ type: "offering", offering, pool: { items: pool, currentIndex: at < 0 ? 0 : at } });
       }
-      emit({ type: "done", meta: { llm: { queries: Boolean(plan), enabled: llmReady() } } });
+      emit({ type: "done", error: lastError, meta: { llm: { queries: Boolean(plan), enabled: llmReady() } } });
       controller.close();
     },
   });
