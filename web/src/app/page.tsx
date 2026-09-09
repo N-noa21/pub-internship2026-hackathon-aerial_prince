@@ -276,13 +276,7 @@ export default function Page() {
           {screen === "TITLE" && (
             <motion.div className="center" key="ui-title"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <div className="panel">
-                <TitleScreen />
-                <div style={{ height: 26 }} />
-                <Win className="cmdwin" >
-                  <Menu items={[{ key: "start", label: "はじめる", hint: "▶ Enter" }]} onPick={() => setScreen("WISH")} />
-                </Win>
-              </div>
+              <TitleScreen onStart={() => setScreen("WISH")} />
             </motion.div>
           )}
 

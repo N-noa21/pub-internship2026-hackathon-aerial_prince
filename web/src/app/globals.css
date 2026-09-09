@@ -756,3 +756,67 @@ html, body { height: 100%; overflow: hidden; }
   border: 2px solid rgba(217, 181, 68, .45);
   box-shadow: 0 10px 24px rgba(0, 0, 0, .5);
 }
+
+/* ============================================================ タイトル（改） */
+.title-shade {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(10, 4, 6, .42) 0%, transparent 16%, transparent 84%, rgba(10, 4, 6, .5) 100%);
+}
+.title-hero {
+  position: relative; z-index: 1;
+  width: min(900px, 94vw); padding: clamp(18px, 3vw, 30px) clamp(20px, 4vw, 44px);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(14, 6, 8, .58), rgba(14, 6, 8, .52));
+  border: 2px solid rgba(217, 181, 68, .6);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, .55),
+    0 0 0 5px rgba(14, 6, 8, .35),
+    inset 0 0 0 1px rgba(255, 230, 170, .14),
+    inset 0 0 80px rgba(255, 190, 110, .06);
+  backdrop-filter: blur(10px) saturate(1.1);
+}
+.title-hero .corner { position: absolute; font-size: 14px; color: var(--gold); }
+.title-hero .corner.tl { left: 10px; top: 8px } .title-hero .corner.tr { right: 10px; top: 8px }
+.title-hero .corner.bl { left: 10px; bottom: 8px } .title-hero .corner.br { right: 10px; bottom: 8px }
+
+.title-inner { display: grid; grid-template-columns: auto 1fr; gap: clamp(14px, 3vw, 36px); align-items: center; }
+.title-prince-img {
+  width: auto; height: clamp(150px, 28vh, 250px); object-fit: contain;
+  filter: drop-shadow(0 14px 26px rgba(0, 0, 0, .7)) drop-shadow(0 0 28px rgba(255, 210, 120, .25));
+}
+.title-text { text-align: left; min-width: 0; }
+.title-kicker {
+  font-size: clamp(.72rem, 1.6vw, .9rem); letter-spacing: .34em; color: #e2cfa4;
+  text-shadow: 0 2px 6px #000;
+}
+.title-logo {
+  margin: 8px 0 6px; line-height: 1.15;
+  /* 文字列は 7 文字。テキスト列（約 520px）に収まる上限にしておく */
+  font-size: clamp(2rem, 4.6vw, 3.5rem); font-weight: 900; color: #fff7e2;
+  letter-spacing: .06em;
+  -webkit-text-stroke: 1px rgba(90, 40, 10, .3);
+  text-shadow:
+    0 3px 0 #5a1a12,
+    0 8px 22px rgba(0, 0, 0, .9),
+    0 0 34px rgba(217, 181, 68, .35);
+  overflow-wrap: anywhere;
+}
+.title-rule {
+  height: 3px; margin: 8px 0 12px; transform-origin: left center;
+  background: linear-gradient(90deg, var(--gold-l), var(--gold) 40%, transparent);
+  box-shadow: 0 0 12px rgba(217, 181, 68, .6);
+}
+.title-lead {
+  margin: 0 0 16px; font-size: clamp(.92rem, 2vw, 1.08rem); letter-spacing: .14em; color: #f3e6c8;
+  text-shadow: 0 2px 8px #000;
+}
+.title-menu { max-width: 300px; }
+
+@media (max-width: 760px) {
+  .title-inner { grid-template-columns: 1fr; justify-items: center; }
+  .title-text { text-align: center; }
+  .title-rule { transform-origin: center; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+  .title-logo { font-size: clamp(1.8rem, 9vw, 2.8rem); }
+  .title-prince-img { height: clamp(140px, 24vh, 220px); }
+  .title-menu { margin: 0 auto; }
+}
