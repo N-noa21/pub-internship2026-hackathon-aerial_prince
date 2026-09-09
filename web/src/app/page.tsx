@@ -1,6 +1,7 @@
 "use client";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useBgm } from "@/hooks/useBgm";
 import AdoptBurst from "@/components/AdoptBurst";
 import Beheading from "@/components/Beheading";
 import EndingScroll from "@/components/EndingScroll";
@@ -26,6 +27,7 @@ const PHASES = ["触れを出しております……", "家臣が市を巡っ�
 
 export default function Page() {
   const [screen, setScreen] = useState<Screen>("TITLE");
+  const { muted, toggleMute } = useBgm(screen);
   const [wish, setWish] = useState("");
   const [queue, setQueue] = useState<Offering[]>([]);
   const [cursor, setCursor] = useState(0);
@@ -435,6 +437,9 @@ export default function Page() {
         </AnimatePresence>
       </div>
 
+      <button className="mute-btn" onClick={toggleMute} aria-label={muted ? "BGM ON" : "BGM OFF"}>
+        {muted ? "🔇" : "🔊"}
+      </button>
       <ItemModal offering={inspecting} onClose={() => setInspecting(null)} />
     </main>
   );
