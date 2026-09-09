@@ -29,9 +29,8 @@ run:
   command: ["npm", "run", "start"]
 
 # 外部 API の egress。宛先は NETWORK RULE TEAM_C_DB.DEVELOPMENT.GEMIN_SHOPPING_EGRESS 側で管理する。
-# GEMIN_SHOPPING_EAI が ACCOUNTADMIN により作成されたらコメントを外して再デプロイする。
-# external_access_integrations:
-#   - GEMIN_SHOPPING_EAI
+external_access_integrations:
+  - GEMIN_SHOPPING_EAI
 
 # /secrets/<name>/secret_string にファイルとしてマウントされる（src/lib/creds.ts が読む）。
 secrets:
@@ -42,9 +41,14 @@ secrets:
   - name: RAKUTEN_ACCESS_KEY
     secret: RAKUTEN_ACCESS_KEY
 
+# モデルは Sonnet に統一する（src/lib/llm.ts の既定は軽量処理のみ Haiku なので明示的に上書き）。
 environment_variables:
   - name: LLM_MODEL
-    value: anthropic/claude-haiku-4.5
+    value: anthropic/claude-sonnet-5
+  - name: LLM_MODEL_FAST
+    value: anthropic/claude-sonnet-4.6
+  - name: LLM_MODEL_LIGHT
+    value: anthropic/claude-sonnet-4.6
 
 auto_resume: true
 auto_suspend_secs: 900
