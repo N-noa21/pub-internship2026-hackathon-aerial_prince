@@ -1,0 +1,31 @@
+# Snowflake App Runtime のマニフェスト
+# 参考: https://docs.snowflake.com/en/developer-guide/snowflake-app-runtime/app-yml
+#
+# 実デプロイ時は `snow app setup` が生成するものを正とし、この内容をマージすること。
+name: gemin_shopping
+
+build:
+  commands:
+    - [npm, ci]
+    - [npm, run, build]
+
+run:
+  command: [npm, run, start]
+
+# 外部 API を呼ぶ場合のみ有効化する。
+# 商品データを事前カタログ化する構成なら、楽天向けの EAI は不要になる。
+# external_access_integrations:
+#   - rakuten_eai
+#   - ai_gateway_eai
+
+# secrets:
+#   - name: AI_GATEWAY_API_KEY
+#     secret: gemin.public.ai_gateway_key
+#   - name: RAKUTEN
+#     secret: gemin.public.rakuten_key
+
+compute:
+  min_instances: 1
+  max_instances: 1
+  auto_suspend_secs: 900
+  auto_resume: true

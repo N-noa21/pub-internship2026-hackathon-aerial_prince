@@ -1,4 +1,5 @@
 .env
+.env.local
 
 .cortex/plans/
 .snowflake/*
@@ -6,3 +7,17 @@
 .snowflake/cortex/*
 !.snowflake/cortex/settings.json
 !.snowflake/config.toml.example
+
+# 依存とビルド成果物
+node_modules/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+.venv/
+__pycache__/
+
+# 資格情報（絶対にコミットしない）
+**/.streamlit/secrets.toml
+
+.DS_Store
+*.log
