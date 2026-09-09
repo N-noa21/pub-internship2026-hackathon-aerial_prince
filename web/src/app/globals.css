@@ -820,3 +820,13 @@ html, body { height: 100%; overflow: hidden; }
   .title-prince-img { height: clamp(140px, 24vh, 220px); }
   .title-menu { margin: 0 auto; }
 }
+/* ── BGM mute button ── */
+.mute-btn {
+  position: fixed; top: 12px; right: 12px; z-index: 9999;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(20, 10, 8, .6); border: 1px solid var(--gold-d);
+  color: var(--parch); font-size: 1.2rem;
+  cursor: pointer; display: grid; place-items: center;
+  transition: background .2s;
+}
+.mute-btn:hover { background: rgba(217, 181, 68, .25); }
