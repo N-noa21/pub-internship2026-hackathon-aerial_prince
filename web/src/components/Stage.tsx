@@ -102,6 +102,12 @@ export function Card({ offering, delay = .28, glow = false, onOpen, bump = 0, sw
       className={`offer parchment${glow ? " glow" : ""}`}
       onClick={onOpen}
       role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={onOpen ? `${item.displayName} を検分する` : undefined}
+      // Enter / Space で開く。メニュー側も window の Enter を拾うので伝播を止める
+      onKeyDown={onOpen ? (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onOpen(); }
+      } : undefined}
       whileHover={onOpen ? { scale: 1.03, rotate: -0.6 } : undefined}
       whileTap={onOpen ? { scale: .98 } : undefined}
       initial={{ y: -46, rotate: -14, scale: .72, opacity: 0 }}
@@ -134,7 +140,7 @@ export function Card({ offering, delay = .28, glow = false, onOpen, bump = 0, sw
           差し替え
         </motion.span>
       )}
-      {onOpen && <span className="peek">▸ 検分する</span>}
+      {onOpen && <span className="peek">▸ 押して検分する</span>}
       <motion.div className="seal"
         initial={{ scale: 0, rotate: -40 }} animate={{ scale: 1, rotate: -12 }}
         transition={{ type: "spring", stiffness: 200, damping: 11, delay: delay + .35 }}>

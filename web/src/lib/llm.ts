@@ -5,11 +5,12 @@
  *
  * どの関数も失敗したら null を返す。呼び出し側は必ずルールベースへ落とすこと。
  */
-import { gateway } from "@ai-sdk/gateway";
+import { createGateway } from "@ai-sdk/gateway";
 import { generateObject } from "ai";
 import { z } from "zod";
 import type { Item } from "./types";
 import { RETAINERS, type RetainerId } from "./retainers";
+import { cred } from "./creds";
 
 // 品質重視で Opus を既定にする。会話だけは応答の速い fast 版を使う。
 const MODEL = process.env.LLM_MODEL ?? "anthropic/claude-sonnet-5";
@@ -18,7 +19,10 @@ const MODEL_FAST = process.env.LLM_MODEL_FAST ?? "anthropic/claude-sonnet-4.6";
 const MODEL_LIGHT = process.env.LLM_MODEL_LIGHT ?? "anthropic/claude-haiku-4.5";
 const IDS = ["merchant", "noble", "knight", "farmer", "alchemist", "chancellor"] as const;
 
-export const llmReady = () => Boolean(process.env.AI_GATEWAY_API_KEY);
+export const llmReady = () => Boolean(cred("AI_GATEWAY_API_KEY"));
+
+/** 鍵はローテーションされるので、呼ぶたびに読み直して都度作る */
+const gw = (id: string) => createGateway({ apiKey: cred("AI_GATEWAY_API_KEY") })(id);
 
 const TWIST_GUIDE = `ズラし方の型（どれかを使う）:
 - スケールダウン: 本物 → おもちゃ・ミニチュア（城 → レゴの城）
@@ -46,7 +50,7 @@ async function ask<T>(schema: z.ZodType<T>, system: string, prompt: string,
   if (!llmReady()) return null;
   try {
     const { object } = await generateObject({
-      model: gateway(model), schema, system, prompt,
+      model: gw(model), schema, system, prompt,
       temperature: 1, maxRetries: 1,
     });
     return object;

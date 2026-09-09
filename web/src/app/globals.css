@@ -49,6 +49,16 @@ html, body { height: 100%; overflow: hidden; }
       pointer-events: none; }
 .ui > * { pointer-events: auto; }
 
+/*
+ * 謁見の UI は display:contents で包んでいるため、.topbar と .rpg-bottom が
+ * pointer-events:auto を継承してしまう。両者は箱が大きく余白も広いので、
+ * そのままだと背景側にある献上カードのクリックを奪う。
+ * 帯そのものは透過させ、中身だけ受け取る。
+ */
+.topbar { pointer-events: none; }
+.rpg-bottom { pointer-events: none; }
+.rpg-bottom > * { pointer-events: auto; }
+
 /* 上の帯（見出し） */
 .topbar {
   padding: 14px 18px 34px; text-align: center;
@@ -485,6 +495,11 @@ html, body { height: 100%; overflow: hidden; }
 .sheet .btn { color: var(--parch); }
 
 .offer { cursor: pointer; }
+.offer[role="button"] { pointer-events: auto; touch-action: manipulation; }
+.offer[role="button"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--gold), 0 14px 34px rgba(0, 0, 0, .5);
+}
 .offer:hover { filter: brightness(1.04); }
 .offer .peek {
   position: absolute; left: 0; right: 0; bottom: -19px; text-align: center;

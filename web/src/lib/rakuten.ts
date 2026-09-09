@@ -6,6 +6,7 @@
  * Snowflake から実行時に呼ぶ構成は現実的でない見込み（../docs/tech/05-rakuten-api.md）。
  */
 import type { Item } from "./types";
+import { cred } from "./creds";
 
 const ENDPOINT = "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260701";
 const NG = ["アダルト", "18禁", "成人", "ジャンク", "【中古】", "中古品"];
@@ -57,8 +58,8 @@ export async function search(query: string, hits = 20): Promise<Item[]> {
   const cached = cache.get(query);
   if (cached) return cached;
 
-  const appId = process.env.RAKUTEN_APP_ID ?? "";
-  const key = process.env.RAKUTEN_ACCESS_KEY ?? "";
+  const appId = cred("RAKUTEN_APP_ID");
+  const key = cred("RAKUTEN_ACCESS_KEY");
   if (!appId || !key) throw new Error("RAKUTEN_APP_ID / RAKUTEN_ACCESS_KEY が未設定です");
 
   const params = new URLSearchParams({

@@ -1,31 +1,56 @@
-# Snowflake App Runtime のマニフェスト
-# 参考: https://docs.snowflake.com/en/developer-guide/snowflake-app-runtime/app-yml
-#
-# 実デプロイ時は `snow app setup` が生成するものを正とし、この内容をマージすること。
-name: gemin_shopping
+version: 2
 
+name: GEMIN_SHOPPING
+database: TEAM_C_DB
+schema: DEVELOPMENT
+query_warehouse: TEAM_C_WH
+
+ignore:
+  - node_modules
+  - .env*
+  - __pycache__
+  - "*.pyc"
+  - .next
+  - .git
+  - snowflake.log
+  - "*.tsbuildinfo"
+  - app.yml.builder
+
+label: "下民ショッピング"
+description: "わがままな王子様に家臣が献上品を持ってくる。気に入らなければ打ち首だ。"
+
+install:
+  commands:
+    - ["npm", "ci"]
 build:
   commands:
-    - [npm, ci]
-    - [npm, run, build]
-
+    - ["npm", "run", "build"]
 run:
-  command: [npm, run, start]
+  command: ["npm", "run", "start"]
 
-# 外部 API を呼ぶ場合のみ有効化する。
-# 商品データを事前カタログ化する構成なら、楽天向けの EAI は不要になる。
-# external_access_integrations:
-#   - rakuten_eai
-#   - ai_gateway_eai
+# 外部 API の egress。宛先は NETWORK RULE TEAM_C_DB.DEVELOPMENT.GEMIN_SHOPPING_EGRESS 側で管理する。
+external_access_integrations:
+  - GEMIN_SHOPPING_EAI
 
-# secrets:
-#   - name: AI_GATEWAY_API_KEY
-#     secret: gemin.public.ai_gateway_key
-#   - name: RAKUTEN
-#     secret: gemin.public.rakuten_key
+# /secrets/<name>/secret_string にファイルとしてマウントされる（src/lib/creds.ts が読む）。
+secrets:
+  - name: AI_GATEWAY_API_KEY
+    secret: AI_GATEWAY_API_KEY
+  - name: RAKUTEN_APP_ID
+    secret: RAKUTEN_APP_ID
+  - name: RAKUTEN_ACCESS_KEY
+    secret: RAKUTEN_ACCESS_KEY
 
-compute:
-  min_instances: 1
-  max_instances: 1
-  auto_suspend_secs: 900
-  auto_resume: true
+# モデルは Sonnet に統一する（src/lib/llm.ts の既定は軽量処理のみ Haiku なので明示的に上書き）。
+environment_variables:
+  - name: LLM_MODEL
+    value: anthropic/claude-sonnet-5
+  - name: LLM_MODEL_FAST
+    value: anthropic/claude-sonnet-4.6
+  - name: LLM_MODEL_LIGHT
+    value: anthropic/claude-sonnet-4.6
+
+auto_resume: true
+auto_suspend_secs: 900
+min_instances: 1
+max_instances: 1
