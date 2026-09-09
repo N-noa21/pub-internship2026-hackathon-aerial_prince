@@ -49,13 +49,9 @@ export const RETAINERS: Retainer[] = [
 
 export const BY_ID = Object.fromEntries(RETAINERS.map((r) => [r.id, r])) as Record<RetainerId, Retainer>;
 
-/**
- * 商人と農民は毎回出る。残り 2 枠はローテーション。
- * 貴族は立ち絵が用意できていないので、いまは外している
- * （src/assets に貴族の絵を足して art.ts に登録すれば、ここに "noble" を戻すだけでよい）。
- */
+/** 商人と農民は毎回出る。残り 2 枠は貴族・騎士・錬金術師から抽選。 */
 export const FIXED_IDS: RetainerId[] = ["merchant", "farmer"];
-export const ROTATING_IDS: RetainerId[] = ["knight", "alchemist"];
+export const ROTATING_IDS: RetainerId[] = ["noble", "knight", "alchemist"];
 
 /** 1 プレイぶんの顔ぶれを決める。宰相は必ず最後。 */
 export function lineup(): Retainer[] {

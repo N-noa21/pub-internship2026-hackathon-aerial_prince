@@ -14,6 +14,8 @@ import { RETAINERS, type RetainerId } from "./retainers";
 // 品質重視で Opus を既定にする。会話だけは応答の速い fast 版を使う。
 const MODEL = process.env.LLM_MODEL ?? "anthropic/claude-sonnet-5";
 const MODEL_FAST = process.env.LLM_MODEL_FAST ?? "anthropic/claude-sonnet-4.6";
+// 軽い見直し（差し替え）は速さ優先で Haiku
+const MODEL_LIGHT = process.env.LLM_MODEL_LIGHT ?? "anthropic/claude-haiku-4.5";
 const IDS = ["merchant", "noble", "knight", "farmer", "alchemist", "chancellor"] as const;
 
 export const llmReady = () => Boolean(process.env.AI_GATEWAY_API_KEY);
@@ -76,7 +78,7 @@ ${ROLES}
 - 検索語は日本語 1〜3 語、スペース区切り。楽天市場で実際に商品が引ける平易な語にする
 - 架空の商品名や存在しない固有名詞を作らない
 - 前半 4 人の商品カテゴリは互いに被らせない`,
-    `王子のわがまま: 「${wish}」`);
+    `王子のわがまま: 「${wish}」`, MODEL_FAST);
   if (!res) return null;
   const map = {} as Record<RetainerId, { query: string; twist: string }>;
   for (const q of res.queries) if (q.query.trim()) map[q.retainerId] = { query: q.query.trim(), twist: q.twist };
@@ -239,25 +241,23 @@ ${input.history.map((t) => `${t.from === "prince" ? "王子" : "あなた"}: 「
 }
 
 
-/* ------------------------------------------- 5. 王子の言葉を受けた差し替え */
+/* ------------------------------------------- 5. 王子の言葉を受けた軽い見直し */
 const RethinkSchema = z.object({
   changes: z.array(z.object({
     retainerId: z.enum(IDS),
-    index: z.number().int().describe("その家臣の候補リストの番号。変えないなら現在と同じ番号"),
-    displayName: z.string().describe("短い呼び名。8〜18 文字"),
-    speech: z.string().describe("差し替えた言い訳を含む口上。40 文字以内。その家臣の口調で"),
-    changed: z.boolean().describe("実際に品を変えたか"),
+    index: z.number().int().describe("候補の番号。変えないなら現在の番号"),
+    speech: z.string().describe("口上。35 文字以内。品を変えたなら慌てた気配を混ぜる"),
   })),
 });
 
 /**
- * 王子が前の家臣に言った言葉を、まだ献上していない家臣たちが聞いている。
- * 候補リストの中から選び直させる（楽天を引き直さないので速い）。
+ * 王子が前の家臣に言った言葉を、次に出る家臣が聞いていた。
+ * 手持ちの候補から「少しだけ」選び直す。楽天は引かない。Haiku で数秒。
  */
 export async function rethink(input: {
   wish: string;
-  feedback: string[];                       // 王子がこれまでに言った言葉
-  rejected: string[];                       // 斬られた品
+  feedback: string[];
+  rejected: string[];
   pools: Partial<Record<RetainerId, { items: Item[]; currentIndex: number }>>;
 }) {
   const lines: string[] = [];
@@ -265,32 +265,58 @@ export async function rethink(input: {
     const p = input.pools[r.id];
     if (!p?.items.length) continue;
     lines.push(`[${r.id} / ${r.name}] いま出す予定: ${p.currentIndex}`);
-    p.items.forEach((it, i) =>
-      lines.push(`  ${i}: ${it.displayName} ｜ ${it.name.slice(0, 50)} / ${it.price.toLocaleString()}円`));
+    p.items.slice(0, 4).forEach((it, i) =>
+      lines.push(`  ${i}: ${it.displayName} / ${it.price.toLocaleString()}円`));
   }
   if (!lines.length) return null;
 
   return ask(RethinkSchema,
-    `謁見の場で、前の家臣が王子に叱られた。**列に並んでいる家臣たちはそれを聞いている。**
-彼らは慌てて、自分が出す品を選び直す。
+    `列に並ぶ家臣が、前の家臣が王子に叱られるのを聞いた。慌てて自分の品を見直す。
+- 王子の言葉から不満の方向（安い／ズレている／小さい／趣味でない）を読む
+- 手持ちの中に明らかに良いものがあれば index を変える。無ければ変えない
+- chancellor(宰相) は動じない
+- 口上は 35 文字以内。家臣の口調（商人=通販／農民=方言／騎士=武骨／錬金術師=怪しい／宰相=敬語）
+- 候補にない品は出さない`,
+    `わがまま: 「${input.wish}」
+王子の言葉: ${input.feedback.slice(-3).map((f) => `「${f}」`).join(" ")}
+斬られた品: ${input.rejected.slice(-2).join("、") || "なし"}
+${lines.join("\n")}`, MODEL_LIGHT);
+}
 
-判断の仕方:
-- 王子の言葉から**何が気に入らなかったのか**を読み取る（安すぎる／解釈がズレている／小さい／趣味に合わない 等）
-- 手持ちの候補にもっと良いものがあれば **index を変える**（changed = true）
-- 候補が全部同じようなものなら、無理に変えず現在の index のままにする（changed = false）
-- chancellor(宰相) は動じない。よほどの理由がなければ変えない
-- 品を変えたときの口上には、**慌てて差し替えた気配**をにじませる
-  例「い、いまのは忘れてくだせぇ。こちらの方が……」「急ぎ、上等な方をご用意しました」
-- 候補にない商品を作らない。必ず index で答える
-- 家臣ごとの口調は崩さない`,
-    `王子のわがまま: 「${input.wish}」
+/* --------------------------------------------- 2'. 一人ぶんの選定＋口上（逐次配信用） */
+const PickOneSchema = z.object({
+  index: z.number().int().describe("候補リストの番号"),
+  displayName: z.string().describe("短い呼び名。8〜18 文字。宣伝文句を削る"),
+  speech: z.string().describe("献上の口上。40 文字以内。その家臣の口調で"),
+});
 
-王子がこれまでに言い放った言葉:
-${input.feedback.map((f) => `- 「${f}」`).join("\n") || "- （まだ何も言っていない）"}
+/** 家臣一人だけ選ばせる。全員ぶんを待たずに一人ずつ画面に出すために使う。速い方のモデルで回す。 */
+export async function pickOne(wish: string, retainerId: RetainerId, retainerName: string, pool: Item[]) {
+  const lines = pool.map((it, i) =>
+    `  ${i}: ${it.displayName} ｜ 原文: ${it.name.slice(0, 70)} / ${it.price.toLocaleString()}円`);
+  const res = await ask(PickOneSchema,
+    `あなたは王様ゲームの脚本家。家臣「${retainerName}」(${retainerId}) が献上する品を候補から 1 つ選び、
+短い呼び名を付け、その家臣の口で口上を述べさせる。
 
-すでに斬られた品:
-${input.rejected.map((r) => `- ${r}`).join("\n") || "- （なし）"}
+選ぶ基準: わがままに「一応は答えているが、明らかにスケールが違う」ものほど良い。
+${retainerId === "chancellor" ? "ただし宰相なので、現実的で妥当なものを真面目に選ぶ。おもちゃ・模型は選ばない。" : ""}
+- 候補にない品を出さない。必ず index で答える
 
-まだ献上していない家臣と、その手持ちの候補:
-${lines.join("\n")}`);
+displayName: 商品の正体だけが分かる 8〜18 文字（「【送料無料】」「ランキング1位」は落とす。数量は残してよい）
+
+口上（40 文字以内）:
+- merchant 商人: 通販番組。早口で押しが強い。語尾「〜にございます！」「〜ですぞ！」
+- noble 貴族: 気取って回りくどい。語尾「〜ですわ」「〜でございましょう」
+- knight 騎士: 実直で武骨。報告口調。語尾「〜であります」「〜にて」
+- farmer 農民: 素朴で必死。方言。語尾「〜ですだ」「〜でごぜぇます」
+- alchemist 錬金術師: 怪しい含み笑い。語尾「〜ですぞ……」
+- chancellor 宰相: 冷静な敬語。正論だが夢がない`,
+    `王子のわがまま: 「${wish}」\n\n候補:\n${lines.join("\n")}`, MODEL_FAST);
+  if (!res || res.index < 0 || res.index >= pool.length) return null;
+  const base = pool[res.index];
+  return {
+    item: res.displayName?.trim() ? { ...base, displayName: res.displayName.slice(0, 24) } : base,
+    speech: res.speech.slice(0, 50),
+    index: res.index,
+  };
 }

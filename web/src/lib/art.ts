@@ -5,6 +5,7 @@
 import type { StaticImageData } from "next/image";
 import heishi from "@/assets/heishi.png";
 import kenshi from "@/assets/kenshi.png";
+import kizoku from "@/assets/kizoku.png";
 import noumin from "@/assets/noumin.png";
 import noumin_fufu from "@/assets/noumin_fufu.png";
 import noumin_oji from "@/assets/noumin_oji.png";
@@ -22,10 +23,11 @@ export const FARMERS: StaticImageData[] = [noumin_oji, noumin];
  * - noumin_fufu（かご一杯の作物）→ 商人（市の売り手）
  * - noumin_oji / noumin   → 農民
  * - renkinjutsu           → 錬金術師
- * 貴族の絵だけ手持ちに無いので、いまは登場させていない（retainers.ts の ROTATING_IDS）
+ * - kizoku（燕尾服）      → 貴族
  */
 export const ART: Partial<Record<RetainerId, StaticImageData>> = {
   merchant: noumin_fufu,
+  noble: kizoku,
   knight: heishi,
   farmer: noumin_oji,
   alchemist: renkinjutsu,

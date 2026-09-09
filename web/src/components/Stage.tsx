@@ -54,17 +54,27 @@ export function Portrait({ retainer, variant = 0 }: {
     sizes="(max-width: 700px) 40vw, 260px" />;
 }
 
+/** 登場の所要時間（秒）。カードや口上はこの後に出す */
+export const WALK_IN = 1.5;
+
 export function Figure({ offering, entering = true, mood, variant = 0 }: {
   offering: Offering; entering?: boolean; mood?: Mood; variant?: number;
 }) {
   const { retainer } = offering;
   const idle = IDLE[mood ?? "calm"];
+  // 奥の扉（画面の上の方）から赤絨毯を歩いてきて、手前で一礼する
+  const far = typeof window !== "undefined" ? -Math.round(window.innerHeight * .3) : -260;
   return (
     <motion.div
       className={`figure mood-${mood ?? "calm"}`}
-      initial={entering ? { x: 260, opacity: 0, scale: .82 } : false}
-      animate={{ x: 0, opacity: 1, scale: 1 }}
-      transition={{ type: "spring", stiffness: 90, damping: 14 }}
+      initial={entering ? { y: far, scale: .3, opacity: 0, rotate: 0 } : false}
+      animate={entering
+        ? { y: [far, far * .55, 0, 0, 0], scale: [.3, .55, 1, 1, 1], opacity: [0, 1, 1, 1, 1], rotate: [0, 0, 0, 12, 0] }
+        : { y: 0, scale: 1, opacity: 1, rotate: 0 }}
+      transition={entering
+        ? { duration: WALK_IN, times: [0, .35, .68, .84, 1], ease: ["easeIn", "easeOut", "easeOut", "easeInOut"] }
+        : { type: "spring", stiffness: 90, damping: 14 }}
+      style={{ transformOrigin: "50% 100%" }}
     >
       <motion.div
         className="body"

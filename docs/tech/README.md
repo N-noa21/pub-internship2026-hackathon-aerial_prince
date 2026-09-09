@@ -11,6 +11,7 @@
 | [03-prompts.md](03-prompts.md) | LLM 呼び出しの分割と構造化出力スキーマ |
 | [04-animation-spec.md](04-animation-spec.md) | 打ち首アニメーションの実装仕様（AI に渡すコントラクト） |
 | [05-rakuten-api.md](05-rakuten-api.md) | 楽天 API 連携（EAI・クエリ・キャッシュ） |
+| [06-ui-libraries.md](06-ui-libraries.md) | UI / アニメーションライブラリの調査（Tailwind・GSAP・Magic UI 等） |
 
 ## 前提
 

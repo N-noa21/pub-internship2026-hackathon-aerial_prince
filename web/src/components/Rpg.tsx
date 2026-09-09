@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { sfx } from "@/lib/sfx";
 
 /** RPG の枠つきウィンドウ */
 export function Win({ children, className = "", speaker, tone }: {
@@ -22,7 +23,9 @@ export function Typewriter({ text, speed = 34, onDone }: {
   useEffect(() => { setN(0); }, [text]);
   useEffect(() => {
     if (done) { onDone?.(); return; }
-    const t = setTimeout(() => setN((v) => v + 1), speed);
+    const t = setTimeout(() => {
+      setN((v) => { if (v % 3 === 0) sfx.blip(); return v + 1; });
+    }, speed);
     return () => clearTimeout(t);
   }, [n, text, speed, done, onDone]);
   useEffect(() => {
@@ -85,7 +88,7 @@ export function Menu({ items, onPick, columns = 1, hint = true }: {
 
       const move = (dx: number, dy: number) => {
         e.preventDefault();
-        setI((cur) => step(list, cur, dx, dy, cols));
+        setI((cur) => { const n = step(list, cur, dx, dy, cols); if (n !== cur) sfx.tick(); return n; });
       };
 
       switch (e.key) {
@@ -107,7 +110,7 @@ export function Menu({ items, onPick, columns = 1, hint = true }: {
           if (typing) return;                              // 入力欄側の Enter を優先
           e.preventDefault();
           const it = list[i];
-          if (it && !it.disabled) onPick(it.key);
+          if (it && !it.disabled) { sfx.confirm(); onPick(it.key); }
           return;
         }
       }
@@ -122,8 +125,8 @@ export function Menu({ items, onPick, columns = 1, hint = true }: {
         {items.map((it, idx) => (
           <li key={it.key}>
             <button className="mi" data-on={idx === i} disabled={it.disabled}
-              onMouseEnter={() => !it.disabled && setI(idx)}
-              onClick={() => !it.disabled && onPick(it.key)}>
+              onMouseEnter={() => { if (!it.disabled && idx !== i) { setI(idx); sfx.tick(); } }}
+              onClick={() => { if (!it.disabled) { sfx.confirm(); onPick(it.key); } }}>
               <span className="cur">▶</span>
               <span className="lb">{it.label}</span>
               {it.hint && <span className="hintlabel">{it.hint}</span>}

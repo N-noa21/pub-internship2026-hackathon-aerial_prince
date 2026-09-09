@@ -7,8 +7,8 @@ export const runtime = "nodejs";
 export const maxDuration = 45;
 
 /**
- * 王子の言葉を受けて、まだ献上していない家臣が品を選び直す。
- * 楽天は引き直さず、最初に取った候補リストの中から選ばせるので速い。
+ * 王子の言葉を受けて、次に出る家臣が品を「少し」見直す。
+ * 楽天は引き直さず、候補の上位 4 件から Haiku に選ばせるので数秒で返る。
  */
 export async function POST(req: Request) {
   const { wish, feedback, rejected, pools } = (await req.json()) as {
@@ -29,9 +29,9 @@ export async function POST(req: Request) {
       const item = p.items[c.index];
       return {
         retainerId: c.retainerId,
-        item: { ...item, displayName: c.displayName?.trim() ? c.displayName.slice(0, 24) : item.displayName },
+        item,
         speech: c.speech.slice(0, 50),
-        changed: c.changed && c.index !== p.currentIndex,
+        changed: c.index !== p.currentIndex,
       };
     });
 

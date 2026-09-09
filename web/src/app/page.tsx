@@ -1,47 +1,66 @@
 "use client";
+import Image from "next/image";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useBgm } from "@/hooks/useBgm";
 import AdoptBurst from "@/components/AdoptBurst";
 import Beheading from "@/components/Beheading";
-import EndingScroll from "@/components/EndingScroll";
+import Curtain from "@/components/Curtain";
+import EndingStage from "@/components/EndingStage";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import ItemModal from "@/components/ItemModal";
 import Loading from "@/components/Loading";
+import QueueLine from "@/components/QueueLine";
 import { Menu, Typewriter, Win, type MenuItem } from "@/components/Rpg";
-import { Card, Figure, Queue, Scene } from "@/components/Stage";
+import { Card, Figure, Queue, Scene, WALK_IN } from "@/components/Stage";
 import TitleScreen from "@/components/TitleScreen";
-import { REASONS, SAMPLE_WISHES, pickAnim, type AnimId, type ReasonCode } from "@/lib/retainers";
-import type { RetainerId } from "@/lib/retainers";
+import { PRINCE } from "@/lib/art";
+import { judge } from "@/lib/ending";
+import { REASONS, SAMPLE_WISHES, pickAnim, type AnimId, type ReasonCode, type Retainer, type RetainerId } from "@/lib/retainers";
+import { sfx } from "@/lib/sfx";
+import { useBgm } from "@/hooks/useBgm";
 import type { EndingResult, Item, Judgment, Mood, Offering, Turn } from "@/lib/types";
 
+type Screen = "TITLE" | "WISH" | "AUDIENCE" | "BEHEAD" | "ADOPT" | "RETHINK" | "WAITING" | "ENDING";
+type MenuMode = "root" | "reason" | "talk";
 type Pool = { items: Item[]; currentIndex: number };
-
-type Screen = "TITLE" | "WISH" | "AUDIENCE" | "BEHEAD" | "ADOPT" | "RETHINK" | "ENDING";
 
 /** 交渉で上乗せされた分を反映した品 */
 const priced = (o: Offering, bump: number) =>
   bump > 0 ? { ...o.item, price: o.item.price + bump } : o.item;
-type MenuMode = "root" | "reason" | "talk";
 
-const PHASES = ["触れを出しております……", "家臣が市を巡っております……", "口上を練っております……"];
+/** 演出ごとの効果音とタイミング（ms） */
+const ANIM_SFX: Record<AnimId, { at: number; play: () => void }> = {
+  fall: { at: 1600, play: sfx.thud },
+  drag: { at: 900, play: sfx.thud },
+  cannon: { at: 720, play: sfx.boom },
+  stamp: { at: 1050, play: sfx.stamp },
+};
 
 export default function Page() {
+  return <ErrorBoundary><Game /></ErrorBoundary>;
+}
+
+function Game() {
   const [screen, setScreen] = useState<Screen>("TITLE");
-  const { muted, toggleMute } = useBgm(screen);
+  const [curtain, setCurtain] = useState(false);
   const [wish, setWish] = useState("");
-  const [queue, setQueue] = useState<Offering[]>([]);
+  const [queue, setQueue] = useState<Offering[]>([]);       // 品が届いた家臣（列の順）
+  const [cast, setCast] = useState<Retainer[]>([]);           // 今回の顔ぶれ（全員）
+  const [streamDone, setStreamDone] = useState(true);       // 配信が終わったか
+  const [waitingFor, setWaitingFor] = useState<number | null>(null);
   const [cursor, setCursor] = useState(0);
   const [judgments, setJudgments] = useState<Judgment[]>([]);
   const [usedAnims, setUsedAnims] = useState<AnimId[]>([]);
   const [dialogue, setDialogue] = useState<Turn[]>([]);
   const [mood, setMood] = useState<Mood | undefined>();
-  const [bump, setBump] = useState(0);          // 交渉で上乗せされた金額
+  const [bump, setBump] = useState(0);
   const [lastAddOn, setLastAddOn] = useState("");
   const [pools, setPools] = useState<Partial<Record<RetainerId, Pool>>>({});
-  const [feedback, setFeedback] = useState<string[]>([]);   // 王子がこれまでに言い放った言葉
-  const [rejected, setRejected] = useState<string[]>([]);   // 斬られた品
+  const [feedback, setFeedback] = useState<string[]>([]);
+  const [rejected, setRejected] = useState<string[]>([]);
   const [changed, setChanged] = useState<Set<string>>(new Set());
   const [line, setLine] = useState("");
+  const [ready, setReady] = useState(false);          // 登場の演出が終わって操作できる
   const [menu, setMenu] = useState<MenuMode>("root");
   const [talkText, setTalkText] = useState("");
   const [talking, setTalking] = useState(false);
@@ -49,68 +68,136 @@ export default function Page() {
   const [pending, setPending] = useState<{ anim: AnimId; offering: Offering; label: string; note: string; variant: number } | null>(null);
   const [adopted, setAdopted] = useState<Offering | null>(null);
   const [ending, setEnding] = useState<EndingResult | null>(null);
+  const [refining, setRefining] = useState(false);    // LLM の文章を待っている
+  const [tremble, setTremble] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [phase, setPhase] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [muted, setMuted] = useState(false);
   const talkRef = useRef<HTMLInputElement>(null);
+  const { toggleMute: toggleBgm } = useBgm(screen === "WAITING" ? "RETHINK" : screen);   // チームメイトのチップチューン BGM
 
-  /** IME 変換中の Enter（変換確定）で送信しないための判定 */
-  const isEnter = (e: React.KeyboardEvent) =>
-    e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229;
+  /** BGM と効果音をまとめて切り替える */
+  const toggleSound = () => { toggleBgm(); setMuted(sfx.toggle()); };
 
   const off = queue[cursor];
 
-  useEffect(() => {
-    if (!busy) return;
-    setPhase(0);
-    const t = [setTimeout(() => setPhase(1), 4200), setTimeout(() => setPhase(2), 9000)];
-    return () => t.forEach(clearTimeout);
-  }, [busy]);
+  /** 緞帳を閉じてから画面を切り替える */
+  const transit = useCallback((to: Screen, after?: () => void) => {
+    setCurtain(true);
+    setTimeout(() => { setScreen(to); after?.(); }, 440);
+    setTimeout(() => setCurtain(false), 620);
+  }, []);
 
-  // 家臣が入れ替わったら会話をリセットして口上を出す
+  const isEnter = (e: React.KeyboardEvent) =>
+    e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229;
+
+  // 家臣が入れ替わったら、歩いてくる → 一礼 → 口上、の順で見せる
   useEffect(() => {
-    if (screen === "AUDIENCE" && off) {
-      setDialogue([]); setMood(undefined); setLine(off.speech);
-      setMenu("root"); setTalkText(""); setBump(0); setLastAddOn("");
-    }
+    if (screen !== "AUDIENCE" || !off) return;
+    setDialogue([]); setMood(undefined); setLine(""); setReady(false);
+    setMenu("root"); setTalkText(""); setBump(0); setLastAddOn("");
+    const t1 = setTimeout(() => { setLine(off.speech); }, WALK_IN * 1000 + 150);
+    const t2 = setTimeout(() => setReady(true), WALK_IN * 1000 + 500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [screen, cursor, off]);
 
   useEffect(() => { if (menu === "talk") talkRef.current?.focus(); }, [menu]);
 
+  /* ------------------------------------------------------------ 家臣を呼ぶ */
   const summon = useCallback(async () => {
     if (!wish.trim()) return;
     setBusy(true); setError(null);
+    const hoof = setInterval(() => sfx.hoof(), 420);
+    let started = false;
     try {
       const res = await fetch("/api/offerings", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wish: wish.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "家臣が集まりませんでした");
-      if (!data.offerings?.length) throw new Error("誰も参上しませんでした。別の言い回しでお試しください。");
-      setQueue(data.offerings); setCursor(0); setJudgments([]); setUsedAnims([]);
-      setPools(data.pools ?? {}); setFeedback([]); setRejected([]); setChanged(new Set());
-      setAdopted(null); setEnding(null);
-      setScreen("AUDIENCE");
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "家臣が集まりませんでした");
+      }
+      setQueue([]); setCast([]); setPools({}); setStreamDone(false); setWaitingFor(null);
+      setCursor(0); setJudgments([]); setUsedAnims([]); setFeedback([]); setRejected([]);
+      setChanged(new Set()); setAdopted(null); setEnding(null);
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      let count = 0;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const lineStr = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+          if (!lineStr) continue;
+          const msg = JSON.parse(lineStr);
+          if (msg.type === "cast") setCast(msg.cast);
+          if (msg.type === "offering") {
+            count++;
+            setQueue((q) => [...q, msg.offering]);
+            setPools((p) => ({ ...p, [msg.offering.retainer.id]: msg.pool }));
+            if (!started) {                                   // 一人目が揃ったら、もう始める
+              started = true; clearInterval(hoof); setBusy(false);
+              transit("AUDIENCE");
+            }
+          }
+          if (msg.type === "done") setStreamDone(true);
+        }
+      }
+      setStreamDone(true);
+      if (!count) throw new Error("誰も参上しませんでした。別の言い回しでお試しください。");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "失敗しました");
-    } finally { setBusy(false); }
-  }, [wish]);
+      if (!started) setError(e instanceof Error ? e.message : "失敗しました");
+      setStreamDone(true);
+    } finally { clearInterval(hoof); setBusy(false); }
+  }, [wish, transit]);
 
-  const finish = useCallback(async (js: Judgment[], outcome: "ADOPTED" | "ALL_BEHEADED", got: Offering | null) => {
-    setScreen("ENDING"); setEnding(null);
-    try {
-      const res = await fetch("/api/ending", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wish, judgments: js, outcome, adopted: got }),
-      });
-      setEnding(await res.json());
-    } catch {
-      setEnding({ title: "記録は失われた", fable: "—", epilogue: "年代記は焼失した。", scores: {} });
+  /** 次の家臣へ進む。まだ届いていなければ待つ */
+  const advance = useCallback((next: number, js: Judgment[], spoke: boolean) => {
+    if (next < queue.length) { if (spoke) runRethinkRef.current(next); else { setCursor(next); setScreen("AUDIENCE"); } return; }
+    if (streamDone || next >= cast.length) { finishRef.current(js, "ALL_BEHEADED", null); return; }
+    setWaitingFor(next); setScreen("WAITING");          // 品がまだ届いていない
+  }, [queue.length, streamDone, cast.length]);
+  const runRethinkRef = useRef<(n: number) => void>(() => {});
+  const finishRef = useRef<(js: Judgment[], o: "ADOPTED" | "ALL_BEHEADED", got: Offering | null) => void>(() => {});
+  const pendingJs = useRef<Judgment[]>([]);
+  const pendingSpoke = useRef(false);
+
+  // 待っている間に届いたら進む。配信が終わっても来なければ全員斬ったことにする
+  useEffect(() => {
+    if (screen !== "WAITING" || waitingFor === null) return;
+    if (waitingFor < queue.length) {
+      const n = waitingFor; setWaitingFor(null);
+      if (pendingSpoke.current) runRethinkRef.current(n); else { setCursor(n); setScreen("AUDIENCE"); }
+    } else if (streamDone) {
+      setWaitingFor(null); finishRef.current(pendingJs.current, "ALL_BEHEADED", null);
     }
-  }, [wish]);
+  }, [screen, waitingFor, queue.length, streamDone]);
 
-  /** 家臣に話しかける */
+  /* ------------------------------------------------------------ 顛末 */
+  const finish = useCallback((js: Judgment[], outcome: "ADOPTED" | "ALL_BEHEADED", got: Offering | null) => {
+    // まず手元の判定で即座に顛末を出す。LLM の文章は後から差し替える
+    const local = judge(js, outcome, got);
+    setEnding(local); setRefining(true);
+    transit("ENDING");
+    fetch("/api/ending", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wish, judgments: js, outcome, adopted: got }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((gen: EndingResult | null) => {
+        if (gen?.epilogue) setEnding((cur) => ({ ...(cur ?? local), title: gen.title || local.title, epilogue: gen.epilogue }));
+      })
+      .catch(() => { /* 手元の顛末のまま */ })
+      .finally(() => setRefining(false));
+  }, [wish, transit]);
+  finishRef.current = finish;
+
+  /* ------------------------------------------------------------ 問答 */
   const speak = async () => {
     const msg = talkText.trim();
     if (!msg || !off || talking) return;
@@ -126,27 +213,28 @@ export default function Page() {
       const data = await res.json();
       setDialogue((d) => [...d, { from: "retainer", text: data.reply, mood: data.mood }]);
       setMood(data.mood); setLine(data.reply);
-      if (data.priceDelta > 0) {
-        setBump((b) => b + data.priceDelta);
-        setLastAddOn(data.addOn || "");
-      }
+      if (data.priceDelta > 0) { setBump((b) => b + data.priceDelta); setLastAddOn(data.addOn || ""); sfx.confirm(); }
     } catch {
       setLine("……（家臣は言葉を失っている）");
     } finally { setTalking(false); }
   };
 
-  /** 王子の言葉を聞いた後続の家臣が、手持ちの候補から選び直す */
-  const runRethink = useCallback(async (nextIndex: number) => {
-    const remaining = queue.slice(nextIndex).map((o) => o.retainer.id);
-    const sub: Partial<Record<RetainerId, Pool>> = {};
-    for (const id of remaining) if (pools[id]) sub[id] = pools[id];
-    if (!Object.keys(sub).length) { setCursor(nextIndex); setScreen("AUDIENCE"); return; }
+  const lastPrinceWord = useMemo(
+    () => [...dialogue].reverse().find((t) => t.from === "prince")?.text ?? "", [dialogue]);
 
+  /* ------------------------------------------------------------ 見直し */
+  const runRethink = useCallback(async (nextIndex: number) => {
+    const nextId = queue[nextIndex]?.retainer.id;
+    const pool = nextId ? pools[nextId] : undefined;
+    if (!nextId || !pool || nextId === "chancellor") { setCursor(nextIndex); setScreen("AUDIENCE"); return; }
     setScreen("RETHINK");
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 7000);
     try {
       const res = await fetch("/api/rethink", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wish, feedback, rejected, pools: sub }),
+        body: JSON.stringify({ wish, feedback, rejected, pools: { [nextId]: pool } }),
+        signal: ctrl.signal,
       });
       const data = await res.json();
       const changes: { retainerId: RetainerId; item: Item; speech: string; changed: boolean }[] = data.changes ?? [];
@@ -156,99 +244,93 @@ export default function Page() {
           const ch = changes.find((c) => c.retainerId === o.retainer.id);
           return ch ? { ...o, item: ch.item, speech: ch.speech } : o;
         }));
-        setPools((p) => {
-          const next = { ...p };
-          for (const c of changes) {
-            const pool = next[c.retainerId];
-            if (pool) {
-              const at = pool.items.findIndex((i) => i.itemCode === c.item.itemCode);
-              next[c.retainerId] = { ...pool, currentIndex: at < 0 ? pool.currentIndex : at };
-            }
-          }
-          return next;
-        });
         setChanged(new Set(changes.filter((c) => c.changed).map((c) => c.retainerId)));
       }
-    } catch { /* 失敗しても元の品のまま進める */ }
-    setCursor(nextIndex);
-    setScreen("AUDIENCE");
+    } catch { /* 元の品のまま */ }
+    clearTimeout(timer);
+    setCursor(nextIndex); setScreen("AUDIENCE");
   }, [queue, pools, wish, feedback, rejected]);
+  runRethinkRef.current = runRethink;
 
-  const lastPrinceWord = useMemo(
-    () => [...dialogue].reverse().find((t) => t.from === "prince")?.text ?? "",
-    [dialogue]);
-
+  /* ------------------------------------------------------------ 判決 */
   const behead = (code: ReasonCode) => {
     const label = REASONS.find((r) => r.code === code)!.label;
     const note = lastPrinceWord;
     const anim = pickAnim(code, cursor + 1, usedAnims);
+    const item = priced(off, bump);
     const js = [...judgments, {
-      retainer: off.retainer, item: priced(off, bump), verdict: "BEHEAD" as const,
-      reasonCode: code, reasonLabel: label, reasonText: note || undefined,
-      dialogue, anim,
+      retainer: off.retainer, item, verdict: "BEHEAD" as const,
+      reasonCode: code, reasonLabel: label, reasonText: note || undefined, dialogue, anim,
     }];
     setJudgments(js); setUsedAnims([...usedAnims, anim]);
-    setRejected((r) => [...r, `${off.item.displayName}（${off.retainer.name} / ${(off.item.price + bump).toLocaleString()}円）`]);
-    setPending({ anim, offering: { ...off, item: priced(off, bump) }, label, note, variant: cursor });
-    setScreen("BEHEAD");
+    setRejected((r) => [...r, `${item.displayName}（${off.retainer.name} / ${item.price.toLocaleString()}円）`]);
+    setPending({ anim, offering: { ...off, item }, label, note, variant: cursor });
+    setScreen("BEHEAD"); setTremble(true);
+    sfx.slash();
+    setTimeout(() => ANIM_SFX[anim].play(), ANIM_SFX[anim].at);
+    setTimeout(() => setTremble(false), 900);
     const spoke = dialogue.some((t) => t.from === "prince");
-    setTimeout(() => {
-      setPending(null);
-      const next = cursor + 1;
-      if (next >= queue.length) finish(js, "ALL_BEHEADED", null);
-      else if (spoke) runRethink(next);            // 王子の言葉を聞いて品を選び直す
-      else { setCursor(next); setScreen("AUDIENCE"); }
-    }, 2700);
+    pendingJs.current = js; pendingSpoke.current = spoke;
+    setTimeout(() => { setPending(null); advance(cursor + 1, js, spoke); }, 2700);
   };
 
   const adopt = () => {
+    const item = priced(off, bump);
+    const got = { ...off, item };
     const js = [...judgments, {
-      retainer: off.retainer, item: priced(off, bump), verdict: "ADOPT" as const,
+      retainer: off.retainer, item, verdict: "ADOPT" as const,
       reasonCode: "silent" as ReasonCode, reasonLabel: "採用", reasonText: lastPrinceWord || undefined,
       dialogue, anim: null,
     }];
-    setJudgments(js); setAdopted({ ...off, item: priced(off, bump) }); setScreen("ADOPT");
-    setTimeout(() => finish(js, "ADOPTED", off), 2600);
+    setJudgments(js); setAdopted(got); setScreen("ADOPT");
+    sfx.fanfare();
+    setTimeout(() => finish(js, "ADOPTED", got), 2600);
   };
 
   const reset = (to: Screen) => {
-    setWish(""); setQueue([]); setCursor(0); setJudgments([]); setUsedAnims([]);
-    setAdopted(null); setEnding(null); setDialogue([]); setPools({});
-    setFeedback([]); setRejected([]); setChanged(new Set()); setScreen(to);
+    transit(to, () => {
+      setWish(""); setQueue([]); setCursor(0); setJudgments([]); setUsedAnims([]);
+      setAdopted(null); setEnding(null); setDialogue([]); setPools({});
+      setFeedback([]); setRejected([]); setChanged(new Set()); setRefining(false);
+      setCast([]); setStreamDone(true); setWaitingFor(null);
+    });
   };
 
   const rootItems: MenuItem[] = [
-    { key: "talk", label: "はなす", hint: "問いただす", disabled: talking },
-    { key: "look", label: "けんぶん", hint: "品を検める" },
-    { key: "behead", label: "うちくび", hint: "斬り捨てる" },
-    { key: "adopt", label: "さいよう", hint: "受け取る" },
+    { key: "talk", label: "はなす", hint: "問いただす", disabled: talking || !ready },
+    { key: "look", label: "けんぶん", hint: "品を検める", disabled: !ready },
+    { key: "behead", label: "うちくび", hint: "斬り捨てる", disabled: !ready },
+    { key: "adopt", label: "さいよう", hint: "受け取る", disabled: !ready },
   ];
   const reasonItems: MenuItem[] = [
     ...REASONS.map((r) => ({ key: r.code, label: r.label })),
     { key: "back", label: "もどる" },
   ];
-
   const onRoot = (k: string) => {
     if (k === "talk") setMenu("talk");
     if (k === "look") setInspecting(off);
     if (k === "behead") setMenu("reason");
     if (k === "adopt") adopt();
   };
-  const onReason = (k: string) => (k === "back" ? setMenu("root") : behead(k as ReasonCode));
+  const onReason = (k: string) => { if (k === "back") { sfx.cancel(); setMenu("root"); } else behead(k as ReasonCode); };
 
+  const inHall = screen === "AUDIENCE" || screen === "BEHEAD" || screen === "ADOPT" || screen === "RETHINK" || screen === "WAITING";
+  const arrived = new Set(queue.map((o) => o.retainer.id));
+  const waiting = inHall ? cast.slice(cursor + 1).map((r) => ({ retainer: r, pending: !arrived.has(r.id) })) : [];
   const dim = screen === "BEHEAD" || screen === "ENDING";
 
   return (
     <main className="shell">
       {/* -------------------------------------------------- 背景（全画面） */}
       <Scene dim={dim}>
+        {inHall && <QueueLine waiting={waiting} offset={cursor + 1} tremble={tremble} />}
         <AnimatePresence mode="wait">
           {screen === "AUDIENCE" && off && (
-            <motion.div key={`stage-${cursor}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <Queue total={queue.length} cursor={cursor} />
+            <motion.div key={`stage-${cursor}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: .15 } }}>
+              <Queue total={cast.length || queue.length} cursor={cursor} />
               <Figure offering={off} mood={mood} variant={cursor} />
               <Card offering={off} onOpen={() => setInspecting(off)} bump={bump}
-                swapped={changed.has(off.retainer.id)} />
+                swapped={changed.has(off.retainer.id)} delay={WALK_IN + .05} />
             </motion.div>
           )}
           {screen === "BEHEAD" && pending && (
@@ -260,180 +342,131 @@ export default function Page() {
           {screen === "ADOPT" && adopted && (
             <motion.div key="fx-adopt"><AdoptBurst offering={adopted} /></motion.div>
           )}
-          {screen === "RETHINK" && (
-            <motion.div key="fx-rethink" initial={{ opacity: 0 }} animate={{ opacity: 1 }} />
-          )}
-          {screen === "ENDING" && ending && (
-            <motion.div key="fx-ending" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <EndingScroll res={ending} />
-            </motion.div>
-          )}
         </AnimatePresence>
       </Scene>
 
       {/* -------------------------------------------------- UI */}
       <div className="ui">
+        <button className="mute" onClick={toggleSound} aria-label="音">
+          {muted ? "🔇" : "🔊"}
+        </button>
+
         <AnimatePresence mode="wait">
-          {/* ---------------------------------------- タイトル */}
           {screen === "TITLE" && (
-            <motion.div className="center" key="ui-title"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <TitleScreen onStart={() => setScreen("WISH")} />
+            <motion.div className="center" key="ui-title" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <TitleScreen onStart={() => transit("WISH")} />
             </motion.div>
           )}
 
-          {/* ---------------------------------------- わがまま入力 */}
           {screen === "WISH" && (
-            <motion.div className="center" key="ui-wish"
-              initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              <div className="panel" style={{ width: busy ? "auto" : "min(560px,100%)" }}>
+            <motion.div className="center" key="ui-wish" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <div className="panel" style={{ width: busy ? "auto" : "min(640px,100%)" }}>
                 {busy && <Loading />}
                 {!busy && (
-                <Win speaker="王 子">
-                  <p style={{ margin: "0 0 12px" }}>さて、何を申しつけようか。</p>
-                  <input className="rpg-input" value={wish} disabled={busy} autoFocus
-                    placeholder="でっかい城が欲しいのじゃ"
-                    onChange={(e) => setWish(e.target.value)}
-                    onKeyDown={(e) => { if (isEnter(e)) summon(); }} />
-                  {error && <p style={{ color: "#ff9a8a", fontSize: ".85rem", margin: "10px 0 0" }}>{error}</p>}
-                </Win>)}
-                <div style={{ height: 10 }} />
-                {!busy && (
-                <Win className="cmdwin">
-                  <Menu columns={3} items={[
-                    { key: "go", label: "よびだす", disabled: busy || !wish.trim() },
-                    { key: "gacha", label: "おだいガチャ", disabled: busy },
-                    { key: "back", label: "もどる", disabled: busy },
-                  ]} onPick={(k) => {
-                    if (k === "go") summon();
-                    if (k === "gacha") setWish(SAMPLE_WISHES[Math.floor(Math.random() * SAMPLE_WISHES.length)]);
-                    if (k === "back") reset("TITLE");
-                  }} />
-                </Win>)}
+                  <div className="wish-row">
+                    <div className="wish-prince"><Image src={PRINCE} alt="" sizes="220px" priority /></div>
+                    <div className="wish-col">
+                      <Win speaker="王 子">
+                        <p style={{ margin: "0 0 12px" }}><Typewriter text="さて、何を申しつけようか。" speed={28} /></p>
+                        <input className="rpg-input" value={wish} autoFocus
+                          placeholder="でっかい城が欲しいのじゃ"
+                          onChange={(e) => setWish(e.target.value)}
+                          onKeyDown={(e) => { if (isEnter(e)) summon(); }} />
+                        {error && <p style={{ color: "#ff9a8a", fontSize: ".85rem", margin: "10px 0 0" }}>{error}</p>}
+                      </Win>
+                      <div style={{ height: 10 }} />
+                      <Win className="cmdwin">
+                        <Menu columns={3} items={[
+                          { key: "go", label: "よびだす", disabled: !wish.trim() },
+                          { key: "gacha", label: "おだいガチャ" },
+                          { key: "back", label: "もどる" },
+                        ]} onPick={(k) => {
+                          if (k === "go") summon();
+                          if (k === "gacha") setWish(SAMPLE_WISHES[Math.floor(Math.random() * SAMPLE_WISHES.length)]);
+                          if (k === "back") reset("TITLE");
+                        }} />
+                      </Win>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
 
-          {/* ---------------------------------------- 謁見 */}
           {screen === "AUDIENCE" && off && (
-            <motion.div key="ui-aud" style={{ display: "contents" }}
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div key="ui-aud" style={{ display: "contents" }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <div className="topbar">
                 <div className="t">謁 見 の 間</div>
-                <div className="s">「{wish}」　／　のこり {queue.length - cursor} 人</div>
+                <div className="s">「{wish}」　／　{cursor + 1} 人目　のこり {Math.max(0, (cast.length || queue.length) - cursor - 1)} 人</div>
               </div>
-
               <div className="rpg-bottom">
                 <div className="talkwin">
-                  <Win speaker={off.retainer.name} tone={off.retainer.color}>
-                    <Typewriter text={line} />
+                  <Win speaker={menu === "talk" ? "王 子" : off.retainer.name} tone={menu === "talk" ? "#f6e3a1" : off.retainer.color}>
+                    {menu === "talk" ? (
+                      <div className="talk-row">
+                        <div className="hud-prince"><Image src={PRINCE} alt="" sizes="120px" /></div>
+                        <div style={{ flex: 1 }}>
+                          <input ref={talkRef} className="rpg-input" value={talkText} maxLength={60}
+                            placeholder="王子の言葉を述べよ（例: 城と申したのに、なぜ菓子なのじゃ）"
+                            onChange={(e) => setTalkText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (isEnter(e)) speak();
+                              if (e.key === "Escape") { e.preventDefault(); sfx.cancel(); setMenu("root"); }
+                            }} />
+                          <div style={{ height: 8 }} />
+                          <Menu columns={2} hint={false} items={[
+                            { key: "send", label: "もうす", disabled: !talkText.trim() || talking },
+                            { key: "cancel", label: "やめる" },
+                          ]} onPick={(k) => (k === "send" ? speak() : (sfx.cancel(), setMenu("root")))} />
+                        </div>
+                      </div>
+                    ) : (
+                      line ? <Typewriter text={line} /> : <span className="cursor-wait">…………</span>
+                    )}
                   </Win>
                 </div>
-
-                <div className="rpg-cmd">
-                  <Win>
-                    {menu === "talk" ? (
-                      <>
-                        <input ref={talkRef} className="rpg-input" value={talkText} maxLength={60}
-                          placeholder="王子の言葉を述べよ（例: 城と申したのに、なぜ菓子なのじゃ）"
-                          onChange={(e) => setTalkText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (isEnter(e)) speak();
-                            if (e.key === "Escape") { e.preventDefault(); setMenu("root"); }
-                          }} />
-                        <div style={{ height: 8 }} />
-                        <Menu columns={2} items={[
-                          { key: "send", label: "もうす", disabled: !talkText.trim() || talking },
-                          { key: "cancel", label: "やめる" },
-                        ]} onPick={(k) => (k === "send" ? speak() : setMenu("root"))} />
-                      </>
-                    ) : (
+                {menu !== "talk" && (
+                  <div className="rpg-cmd">
+                    <Win>
                       <div className="status">
                         <span>献上　<b>{off.item.displayName}</b></span>
                         <span>値　<b>{(off.item.price + bump).toLocaleString()}円</b>
                           {bump > 0 && <em className="up">＋{bump.toLocaleString()}</em>}</span>
                         {lastAddOn && <span className="addon">おまけ：{lastAddOn}</span>}
+                        {dialogue.length > 0 && <span className="addon">問答 {dialogue.filter((t) => t.from === "prince").length} 回</span>}
                       </div>
-                    )}
-                  </Win>
-                  {menu !== "talk" && (
-                    <Win className="cmdwin">
-                      {menu === "root"
-                        ? <Menu items={rootItems} onPick={onRoot} />
-                        : <Menu items={reasonItems} onPick={onReason} />}
                     </Win>
-                  )}
-                </div>
+                    <Win className="cmdwin">
+                      {menu === "root" ? <Menu items={rootItems} onPick={onRoot} /> : <Menu items={reasonItems} onPick={onReason} />}
+                    </Win>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
 
-          {/* ---------------------------------------- 差し替え中 */}
+          {screen === "WAITING" && (
+            <motion.div className="center" key="ui-waiting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Loading label="次の者が市から戻っております……" />
+            </motion.div>
+          )}
+
           {screen === "RETHINK" && (
-            <motion.div className="center" key="ui-rethink"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <Loading label="家臣たちがざわめいております……" />
+            <motion.div className="center" key="ui-rethink" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Loading label="次の者が慌てて品を見直しております……" />
             </motion.div>
           )}
 
-          {/* ---------------------------------------- エンディング */}
-          {screen === "ENDING" && (
-            <motion.div key="ui-end" style={{ display: "contents" }}
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <div className="topbar">
-                <div className="t">顛 末</div>
-                <div className="s">「{wish}」</div>
-              </div>
-              {!ending && <div className="center"><Loading label="年代記を編んでおります……" /></div>}
-              {ending && (
-                <motion.div className="rpg-bottom" initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 2.1, duration: .6 }}>
-                  <div className="talkwin">
-                    <Win speaker="戦 利 品">
-                      <div className="endrow">
-                        {adopted ? (
-                          <button className="lootbtn" onClick={() => setInspecting(adopted)}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={adopted.item.image} alt="" />
-                            <span>
-                              <b>{adopted.item.displayName}</b>
-                              <i>{adopted.item.price.toLocaleString()} 円</i>
-                            </span>
-                          </button>
-                        ) : <span className="none">なし。すべて斬り捨てた。</span>}
-                        <div className="scores">
-                          {Object.entries(ending.scores).map(([k, v], i) => (
-                            <div className="sc" key={k}>
-                              <div className="k">{k}</div>
-                              <div className="bar">
-                                <motion.i initial={{ width: 0 }} animate={{ width: `${v}%` }}
-                                  transition={{ duration: .9, delay: 2.4 + i * .1 }} />
-                              </div>
-                              <div className="v">{v}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </Win>
-                  </div>
-                  <div className="rpg-cmd" style={{ gridTemplateColumns: "1fr" }}>
-                    <Win className="cmdwin">
-                      <Menu columns={2} items={[
-                        { key: "again", label: "もういちど" },
-                        { key: "title", label: "タイトルへ" },
-                      ]} onPick={(k) => reset(k === "again" ? "WISH" : "TITLE")} />
-                    </Win>
-                  </div>
-                </motion.div>
-              )}
+          {screen === "ENDING" && ending && (
+            <motion.div key="ui-end" className="end-stage" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <EndingStage res={ending} adopted={adopted} judgments={judgments} wish={wish}
+                refining={refining} onAgain={() => reset("WISH")} onTitle={() => reset("TITLE")} />
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      <button className="mute-btn" onClick={toggleMute} aria-label={muted ? "BGM ON" : "BGM OFF"}>
-        {muted ? "🔇" : "🔊"}
-      </button>
+      <Curtain active={curtain} />
       <ItemModal offering={inspecting} onClose={() => setInspecting(null)} />
     </main>
   );
